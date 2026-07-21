@@ -30,7 +30,7 @@ migrate((app) => {
   });
   app.save(orders);
 
-  // ─── clip_payments (bitácora de eventos crudos, auditoría) ─────────────
+  // ─── clip_payments (raw event audit log) ───────────────────────────────
   const payments = new Collection({
     type: "base",
     name: "clip_payments",

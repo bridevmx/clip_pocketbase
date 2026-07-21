@@ -28,8 +28,10 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     clipPayment = clipApiRequest("GET", "/v1/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
     $app.logger().error("Clip webhook: error querying Clip API", "error", err.message);
-    // Return 502 so Clip retries the webhook delivery.
-    return e.json(502, { status: "upstream_error" });
+    // Throw a real HTTP 502 so Clip retries the webhook delivery.
+    // Using e.json(502) is not reliable in all PocketBase versions;
+    // throwing ApiError guarantees the status code is propagated.
+    throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
 
   const resourceStatus = clipPayment["resource_status"];
