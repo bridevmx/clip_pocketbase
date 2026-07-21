@@ -47,12 +47,17 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   try {
     clipData = clipApiRequest(
       "POST",
-      "/v1/checkout",
+      "/v2/checkout",
       {
         amount: amount,
         currency: "MXN",
+        purchase_description: referenceCollection + ":" + referenceId,
+        redirection_url: {
+          success: webhookBaseUrl,
+          error:   webhookBaseUrl,
+          cancel:  webhookBaseUrl,
+        },
         webhook_url: webhookBaseUrl + "/api/clip/webhook",
-        metadata: { order_id: order.id, user_id: userId || "guest" },
       },
       20
     );
@@ -64,20 +69,23 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   }
 
   // Persist the Clip identifiers returned in the response.
+  // v2 returns payment_request_url (not payment_url).
+  const paymentUrl = clipData["payment_request_url"] || clipData["payment_url"] || "";
   order.set("clip_payment_request_id", clipData["payment_request_id"]);
-  order.set("clip_payment_url", clipData["payment_url"]);
+  order.set("clip_payment_url", paymentUrl);
   order.set("status", "CREATED");
   $app.save(order);
 
   $app.logger().info(
     "Clip payment link created",
     "order_id", order.id,
-    "payment_request_id", clipData["payment_request_id"]
+    "payment_request_id", clipData["payment_request_id"],
+    "payment_url", paymentUrl
   );
 
   return e.json(200, {
     order_id: order.id,
-    payment_url: clipData["payment_url"],
+    payment_url: paymentUrl,
     payment_request_id: clipData["payment_request_id"],
     status: "CREATED",
   });

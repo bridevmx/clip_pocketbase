@@ -9,20 +9,27 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 const CLIP_API_BASE_URL = "https://api.payclip.com";
+const CLIP_API_VERSION = "v2";
 
 /**
  * Returns the Basic Auth header value for the Clip API.
  *
- * CLIP_API_KEY must be set to the pre-encoded Base64 token exactly as
- * provided by Clip — i.e. base64("CLAVE_API:CLAVE_SECRETA") — and is
- * used verbatim in the Authorization header. No re-encoding is done here.
+ * CLIP_API_KEY accepts either format from the Clip dashboard:
+ *   - Full header:  "Basic NjQyZmYx..."  (as shown in the Clip token generator)
+ *   - Token only:   "NjQyZmYx..."        (just the Base64 part)
  *
- * @returns {string}  "Basic <CLIP_API_KEY>"
+ * If the value already starts with "Basic " it is used verbatim.
+ * Otherwise "Basic " is prepended automatically.
+ *
+ * @returns {string}  "Basic <base64token>"
  */
 function clipBasicAuthHeader() {
   const token = $os.getenv("CLIP_API_KEY");
   if (!token) {
     throw new Error("CLIP_API_KEY environment variable is not configured");
+  }
+  if (token.indexOf("Basic ") === 0) {
+    return token;
   }
   return "Basic " + token;
 }
@@ -46,6 +53,7 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
     headers: {
       Authorization: authHeader,
       "Content-Type": "application/json",
+      "Accept": "application/json",
     },
     timeout: timeoutSeconds || 15,
   };

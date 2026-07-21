@@ -25,7 +25,7 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   // Query real payment state from Clip API (single source of truth).
   let clipPayment;
   try {
-    clipPayment = clipApiRequest("GET", "/v1/checkout/" + paymentRequestId, null, 15);
+    clipPayment = clipApiRequest("GET", "/v2/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
     $app.logger().error("Clip webhook: error querying Clip API", "error", err.message);
     // Throw a real HTTP 502 so Clip retries the webhook delivery.
@@ -34,7 +34,8 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
 
-  const resourceStatus = clipPayment["resource_status"];
+  // v2 uses "status" field (not "resource_status"), amount is top-level.
+  const resourceStatus = clipPayment["status"] || clipPayment["resource_status"];
   const receiptNo = clipPayment["receipt_no"] || null;
   const amountPaid = clipPayment["amount"] || 0;
 
@@ -92,22 +93,35 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 });
 
 /**
- * Maps a raw Clip resource_status value to one of the allowed DB select values.
+ * Maps a raw Clip v2 status value to one of the allowed DB select values.
  * Unknown or unexpected values are stored as PENDING so no DB save is rejected.
  *
- * Clip documented statuses (case-insensitive): CREATED, PENDING, COMPLETED, CANCELED, EXPIRED.
+ * Clip v2 documented statuses:
+ *   CHECKOUT_CREATED → CREATED
+ *   CHECKOUT_PENDING → PENDING
+ *   CHECKOUT_COMPLETED → COMPLETED
+ *   CHECKOUT_CANCELED / CHECKOUT_CANCELLED → CANCELED
+ *   CHECKOUT_EXPIRED → EXPIRED
  *
  * @param {string} raw
  * @returns {"CREATED"|"PENDING"|"COMPLETED"|"CANCELED"|"EXPIRED"}
  */
 function normaliseClipStatus(raw) {
   const ALLOWED = {
-    CREATED: "CREATED",
-    PENDING: "PENDING",
+    // v2 prefixed statuses
+    CHECKOUT_CREATED:   "CREATED",
+    CHECKOUT_PENDING:   "PENDING",
+    CHECKOUT_COMPLETED: "COMPLETED",
+    CHECKOUT_CANCELED:  "CANCELED",
+    CHECKOUT_CANCELLED: "CANCELED",
+    CHECKOUT_EXPIRED:   "EXPIRED",
+    // v1 / legacy statuses (kept for backwards compatibility)
+    CREATED:   "CREATED",
+    PENDING:   "PENDING",
     COMPLETED: "COMPLETED",
-    CANCELED: "CANCELED",
-    CANCELLED: "CANCELED", // tolerate British spelling variant
-    EXPIRED: "EXPIRED",
+    CANCELED:  "CANCELED",
+    CANCELLED: "CANCELED",
+    EXPIRED:   "EXPIRED",
   };
 
   const upper = (raw || "").toString().toUpperCase().trim();
@@ -115,7 +129,7 @@ function normaliseClipStatus(raw) {
 
   if (!mapped) {
     $app.logger().warn(
-      "Clip webhook: unknown resource_status received, defaulting to PENDING",
+      "Clip webhook: unknown status received, defaulting to PENDING",
       "raw_status", raw
     );
     return "PENDING";
