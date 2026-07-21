@@ -153,8 +153,8 @@ function clipRefund(receiptNo, orderId, amount, reason) {
   const payload = {
     receipt_no: receiptNo,
     reference: {
-      type: "ORDER_ID",
-      id: orderId,
+      type: "receipt",
+      id: receiptNo,
     },
   };
   if (amount !== null && amount !== undefined) {
