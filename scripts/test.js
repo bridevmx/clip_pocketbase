@@ -451,6 +451,90 @@ async function testClipPaymentsAccessRules() {
   );
 }
 
+// 11. Refund — invalid request (missing order_id)
+async function testRefundInvalid() {
+  section("11 · POST /api/clip/refund (invalid request)");
+
+  const res = await request("POST", "/api/clip/refund", {
+    // missing order_id
+  }, superuserToken);
+
+  assertStatus("Missing order_id returns 400", res.status, 400);
+}
+
+// 12. Refund — unauthorized (no auth)
+async function testRefundUnauthorized() {
+  section("12 · POST /api/clip/refund (unauthorized)");
+
+  const res = await request("POST", "/api/clip/refund", {
+    order_id: "test",
+  });
+
+  assertStatus("No auth returns 403", res.status, 403);
+}
+
+// 13. Transaction — not found
+async function testTransactionNotFound() {
+  section("13 · GET /api/clip/transaction/{receipt} (not found)");
+
+  const res = await request("GET", "/api/clip/transaction/INVALID123", null, superuserToken);
+
+  assert("Route exists (not 404)", res.status !== 404);
+}
+
+// 14. Transactions — missing params
+async function testTransactionsMissingParams() {
+  section("14 · GET /api/clip/transactions (missing params)");
+
+  const res = await request("GET", "/api/clip/transactions", null, superuserToken);
+
+  assertStatus("Missing from/to returns 400", res.status, 400);
+}
+
+// 15. Transactions — invalid date format
+async function testTransactionsInvalidDate() {
+  section("15 · GET /api/clip/transactions (invalid date format)");
+
+  const res = await request("GET", "/api/clip/transactions?from=invalid&to=invalid", null, superuserToken);
+
+  assertStatus("Invalid date format returns 400", res.status, 400);
+}
+
+// 16. Status check — order not found
+async function testStatusCheckNotFound() {
+  section("16 · GET /api/clip/order/{id}/status (order not found)");
+
+  const res = await request("GET", "/api/clip/order/nonexistent/status", null, superuserToken);
+
+  assertStatus("Non-existent order returns 404", res.status, 404);
+}
+
+// 17. Status check — order without payment_request_id
+async function testStatusCheckNoPaymentId() {
+  section("17 · GET /api/clip/order/{id}/status (no payment_request_id)");
+
+  // Create a test order without clip_payment_request_id
+  const createRes = await request("POST", "/api/collections/clip_orders/records", {
+    reference_collection: "test_products",
+    reference_id: "TEST_NO_PAYMENT_ID",
+    amount: 1.00,
+    currency: "MXN",
+    status: "PENDING_LINK",
+  }, superuserToken);
+
+  if (createRes.status === 200 && createRes.json && createRes.json.id) {
+    const orderId = createRes.json.id;
+    const res = await request("GET", `/api/clip/order/${orderId}/status`, null, superuserToken);
+
+    assertStatus("Order without payment_request_id returns 400", res.status, 400);
+
+    // Cleanup
+    await request("DELETE", `/api/collections/clip_orders/records/${orderId}`, null, superuserToken);
+  } else {
+    info("Could not create test order — skipping");
+  }
+}
+
 // ─── CLEANUP ─────────────────────────────────────────────────────────────────
 
 async function cleanup() {
@@ -521,6 +605,13 @@ async function main() {
   await testWebhookRealOrder();
   await testCollectionAccessRules();
   await testClipPaymentsAccessRules();
+  await testRefundInvalid();
+  await testRefundUnauthorized();
+  await testTransactionNotFound();
+  await testTransactionsMissingParams();
+  await testTransactionsInvalidDate();
+  await testStatusCheckNotFound();
+  await testStatusCheckNoPaymentId();
 
   await cleanup();
 
