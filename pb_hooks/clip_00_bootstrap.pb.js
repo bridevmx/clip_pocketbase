@@ -18,10 +18,12 @@
 
 onBootstrap((e) => {
     e.next();
+    const apiKey = $os.getenv("CLIP_API_KEY");
     console.log("");
     console.log("[CLIP PLUGIN] Loaded successfully.");
     console.log("[CLIP PLUGIN] Expected collections: clip_orders, clip_payments");
     console.log("[CLIP PLUGIN] Active routes: POST /api/clip/create-link, POST /api/clip/webhook");
+    console.log("[CLIP PLUGIN] CLIP_API_KEY : " + (apiKey ? "SET" : "MISSING — Clip requests will fail"));
     console.log("[CLIP PLUGIN] To add your business logic after payment, create/edit:");
     console.log("[CLIP PLUGIN]   -> pb_hooks/my_app_clip_handler.pb.js");
     console.log("[CLIP PLUGIN]   -> Listen: onRecordAfterUpdateSuccess((e) => {...}, \"clip_orders\")");

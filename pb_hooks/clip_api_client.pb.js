@@ -11,18 +11,20 @@
 const CLIP_API_BASE_URL = "https://api.payclip.com";
 
 /**
- * Returns the Basic Auth header value for the configured CLIP_API_KEY.
- * Uses Buffer (PocketBase v0.23+) instead of the unavailable btoa().
+ * Returns the Basic Auth header value for the Clip API.
  *
- * @returns {string}  "Basic <base64(apiKey:)>"
+ * CLIP_API_KEY must be set to the pre-encoded Base64 token exactly as
+ * provided by Clip — i.e. base64("CLAVE_API:CLAVE_SECRETA") — and is
+ * used verbatim in the Authorization header. No re-encoding is done here.
+ *
+ * @returns {string}  "Basic <CLIP_API_KEY>"
  */
 function clipBasicAuthHeader() {
-  const apiKey = $os.getenv("CLIP_API_KEY");
-  if (!apiKey) {
+  const token = $os.getenv("CLIP_API_KEY");
+  if (!token) {
     throw new Error("CLIP_API_KEY environment variable is not configured");
   }
-  const encoded = Buffer.from(apiKey + ":").toString("base64");
-  return "Basic " + encoded;
+  return "Basic " + token;
 }
 
 /**

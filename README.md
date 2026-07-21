@@ -54,7 +54,7 @@ Add the two required variables to your deployment environment (details per platf
 
 | Variable | Required | Description |
 |---|---|---|
-| `CLIP_API_KEY` | ✅ Yes | Your Clip Checkout API key — found in the [Clip developer dashboard](https://developer.clip.mx) |
+| `CLIP_API_KEY` | ✅ Yes | Your Clip Basic Auth token — the Base64-encoded string from your [Clip developer dashboard](https://developer.clip.mx), exactly as provided (i.e. `base64("CLAVE_API:CLAVE_SECRETA")`) |
 | `POCKETBASE_URL` | ✅ Yes | Public URL of your PocketBase instance, **no trailing slash** — e.g. `https://pb.myapp.com` |
 
 > ⚠️ **Never hardcode these values** in any plugin file or Dockerfile. They are credentials — keep them exclusively in your deployment environment.
@@ -82,7 +82,7 @@ Migrations run automatically on startup. You will see this in the console when e
 Go to your instance dashboard → **Secrets** tab → add:
 
 ```
-CLIP_API_KEY=your_clip_api_key_here
+CLIP_API_KEY=<your_base64_token_here>
 POCKETBASE_URL=https://your-instance.pockethost.io
 ```
 
@@ -93,7 +93,7 @@ Secrets are injected as environment variables into the PocketBase process and ar
 Go to your App Service → **Environment** tab → add:
 
 ```
-CLIP_API_KEY=your_clip_api_key_here
+CLIP_API_KEY=<your_base64_token_here>
 POCKETBASE_URL=https://pb.myapp.com
 ```
 
@@ -106,7 +106,7 @@ services:
   pocketbase:
     image: your-pb-image
     environment:
-      CLIP_API_KEY: your_clip_api_key_here
+      CLIP_API_KEY: <your_base64_token_here>
       POCKETBASE_URL: https://pb.myapp.com
     volumes:
       - ./pb_data:/pb_data
@@ -115,7 +115,7 @@ services:
 ### 🖥️ Local development
 
 ```bash
-CLIP_API_KEY=your_key POCKETBASE_URL=http://localhost:8090 ./pocketbase serve
+CLIP_API_KEY=<your_base64_token_here> POCKETBASE_URL=http://localhost:8090 ./pocketbase serve
 ```
 
 ---
