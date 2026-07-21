@@ -6,9 +6,17 @@
 //   const clip = require(`${__hooks}/clip_api_client.js`);
 //   const data = clip.request("POST", "/v2/checkout", payload, 20);
 //
-// NOTE: This file does NOT use the .pb.js extension on purpose — PocketBase
-// only auto-executes *.pb.js files as hooks. This file is a plain module
-// loaded explicitly via require() to share scope correctly across hooks.
+// Clip v2 error response shape:
+//   { message, code_message, detail }
+//
+// Known error codes:
+//   002 — Format validation error (bad UUID, missing required fields)
+//   021 — Payment Request ID doesn't exist (valid UUID, unknown to Clip)
+//   401 — access_token is expired (invalid credentials)
+//
+// NOTE: This file does NOT use the .pb.js extension — PocketBase only
+// auto-executes *.pb.js files as hooks. This file is loaded explicitly
+// via require() to share scope correctly across hooks.
 // ─────────────────────────────────────────────────────────────────────────
 
 const CLIP_API_BASE_URL = "https://api.payclip.com";
@@ -19,9 +27,6 @@ const CLIP_API_BASE_URL = "https://api.payclip.com";
  * CLIP_API_KEY accepts either format from the Clip dashboard:
  *   - Full header:  "Basic NjQyZmYx..."  (as shown in the Clip token generator)
  *   - Token only:   "NjQyZmYx..."        (just the Base64 part)
- *
- * If the value already starts with "Basic " it is used verbatim.
- * Otherwise "Basic " is prepended automatically.
  *
  * @returns {string}  "Basic <base64token>"
  */
@@ -39,17 +44,20 @@ function clipBasicAuthHeader() {
 /**
  * Sends an authenticated HTTP request to the Clip API.
  *
+ * Returns { data, statusCode } on all responses.
+ * Throws only on network/timeout errors or missing credentials.
+ * Callers are responsible for checking statusCode.
+ *
  * @param {"GET"|"POST"} method
  * @param {string} path          — e.g. "/v2/checkout" or "/v2/checkout/{id}"
  * @param {object|null} payload  — request body (serialised to JSON), or null
  * @param {number} timeoutSeconds
- * @returns {object}  parsed JSON response body
- * @throws  {Error}   on non-2xx status or missing env var
+ * @returns {{ data: object, statusCode: number }}
+ * @throws  {Error} on network error or missing CLIP_API_KEY
  */
 function clipApiRequest(method, path, payload, timeoutSeconds) {
   const authHeader = clipBasicAuthHeader();
 
-  // DEBUG — visible in PocketHost instance logs.
   const tokenPreview = authHeader.substring(0, 20) + "...";
   console.log("[CLIP DEBUG] " + method + " " + CLIP_API_BASE_URL + path);
   console.log("[CLIP DEBUG] Auth header prefix: " + tokenPreview);
@@ -77,15 +85,16 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
   console.log("[CLIP DEBUG] Response status: " + res.statusCode);
   console.log("[CLIP DEBUG] Response body: " + res.raw);
 
-  if (res.statusCode < 200 || res.statusCode > 299) {
-    throw new Error(
-      "Clip API error " + res.statusCode + " on " + method + " " + path + ": " + res.raw
-    );
-  }
-
-  return res.json;
+  return {
+    statusCode: res.statusCode,
+    data: res.json,
+  };
 }
 
 module.exports = {
   request: clipApiRequest,
+
+  // Clip v2 error code constants for callers.
+  ERR_FORMAT:    "002", // Format validation error — bad input
+  ERR_NOT_FOUND: "021", // Payment Request ID doesn't exist
 };

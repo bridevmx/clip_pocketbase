@@ -44,14 +44,44 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   $app.logger().info("Clip webhook received", "payment_request_id", paymentRequestId);
 
   // Query real payment state from Clip API (single source of truth).
-  let clipPayment;
+  let clipResult;
   try {
-    clipPayment = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
+    clipResult = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
-    $app.logger().error("Clip webhook: error querying Clip API", "error", err.message);
+    $app.logger().error("Clip webhook: network error querying Clip API", "error", err.message);
     // Throw HTTP 502 so Clip retries webhook delivery automatically.
     throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
+
+  // 404 — valid UUID but Clip doesn't know it. Nothing to do.
+  if (clipResult.statusCode === 404) {
+    $app.logger().warn("Clip webhook: payment_request_id not found in Clip", "id", paymentRequestId);
+    return e.json(200, { status: "clip_not_found" });
+  }
+
+  // 400 — malformed UUID or format error. Log and return 200 (don't retry).
+  if (clipResult.statusCode === 400) {
+    const errBody = clipResult.data || {};
+    $app.logger().error(
+      "Clip webhook: format error querying Clip API",
+      "id", paymentRequestId,
+      "code_message", errBody["code_message"] || "",
+      "detail", errBody["detail"] || ""
+    );
+    return e.json(200, { status: "clip_format_error" });
+  }
+
+  // Any other non-2xx → 502 to trigger Clip retry.
+  if (clipResult.statusCode < 200 || clipResult.statusCode > 299) {
+    $app.logger().error(
+      "Clip webhook: unexpected status from Clip API",
+      "status", clipResult.statusCode,
+      "body", JSON.stringify(clipResult.data)
+    );
+    throw new ApiError(502, "Unexpected Clip API response. Retry later.");
+  }
+
+  const clipPayment = clipResult.data;
 
   // v2 GET /checkout/{id} returns "status" at top level.
   const resourceStatus = clipPayment["status"] || clipPayment["resource_status"];

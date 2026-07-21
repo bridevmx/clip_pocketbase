@@ -43,9 +43,9 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   });
 
   // Call the Clip API to create the payment link.
-  let clipData;
+  let clipResult;
   try {
-    clipData = clip.request(
+    clipResult = clip.request(
       "POST",
       "/v2/checkout",
       {
@@ -62,11 +62,26 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
       20
     );
   } catch (err) {
-    $app.logger().error("Error creating Clip payment link", "error", err.message);
+    $app.logger().error("Error calling Clip API", "error", err.message);
     order.set("status", "ERROR_CLIP");
     $app.save(order);
     throw new InternalServerError("Could not create Clip payment link");
   }
+
+  if (clipResult.statusCode < 200 || clipResult.statusCode > 299) {
+    const errBody = clipResult.data || {};
+    $app.logger().error(
+      "Clip API rejected create-link",
+      "status", clipResult.statusCode,
+      "code_message", errBody["code_message"] || "",
+      "detail", errBody["detail"] || ""
+    );
+    order.set("status", "ERROR_CLIP");
+    $app.save(order);
+    throw new InternalServerError("Could not create Clip payment link");
+  }
+
+  const clipData = clipResult.data;
 
   // Persist the Clip identifiers returned in the response.
   // v2 returns payment_request_url (not payment_url).
