@@ -231,6 +231,101 @@ Content-Type: application/json
 
 ---
 
+## 💸 Reembolsar un pago
+
+Llama a `POST /api/clip/refund` con superuser auth. El pago debe estar en status `COMPLETED`.
+
+### Request (reembolso parcial)
+
+```http
+POST /api/clip/refund
+Authorization: Bearer <superuser-token>
+Content-Type: application/json
+
+{
+  "order_id": "abc123def456",
+  "amount": 100.00,
+  "reason": "Customer returned product"
+}
+```
+
+### Request (reembolso total)
+
+```http
+POST /api/clip/refund
+Authorization: Bearer <superuser-token>
+Content-Type: application/json
+
+{
+  "order_id": "abc123def456"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "refund_id": "uuid-del-reembolso",
+  "receipt_no": "RfXyZ123",
+  "status": "APPROVED",
+  "amount_refunded": 100.00
+}
+```
+
+> ⚠️ **Requiere superuser auth.** Los reembolsos solo funcionan para pagos con tarjeta y dentro de 180 días.
+
+---
+
+## 📊 Consultar transacciones
+
+### Por número de recibo
+
+```http
+GET /api/clip/transaction/{receipt_no}
+Authorization: Bearer <user-token>
+```
+
+### Por rango de fechas
+
+```http
+GET /api/clip/transactions?from=2026-07-01&to=2026-07-21
+Authorization: Bearer <user-token>
+```
+
+**Parámetros opcionales:**
+- `page` — Número de página (default: 1)
+- `per_page` — Registros por página (default: 50)
+
+> 📌 **Límite:** Rango máximo de 30 días consecutivos.
+
+---
+
+## 🔍 Verificar estado de orden
+
+Verifica el estado de una orden consultando Clip API directamente — útil cuando el webhook no llega.
+
+```http
+GET /api/clip/order/{order_id}/status
+Authorization: Bearer <user-token>
+```
+
+### Response
+
+```json
+{
+  "order_id": "abc123def456",
+  "clip_status": "COMPLETED",
+  "receipt_no": "PuGCZDqV",
+  "amount_paid": 1.00,
+  "last_checked": "2026-07-21T18:00:00Z"
+}
+```
+
+> 💡 **Tip:** Este endpoint actualiza la orden si el status cambió desde la última verificación.
+
+---
+
 ## 🔄 Flujo de pago completo
 
 ```
@@ -326,8 +421,12 @@ ERROR_CLIP  (Error al crear el link)
 | `clip_api_client.js` | Cliente HTTP centralizado para Clip API | ❌ No |
 | `clip_create_link.pb.js` | Ruta: `POST /api/clip/create-link` | ❌ No |
 | `clip_webhook.pb.js` | Ruta: `POST /api/clip/webhook` | ❌ No |
+| `clip_refund.pb.js` | Ruta: `POST /api/clip/refund` | ❌ No |
+| `clip_transactions.pb.js` | Rutas: `GET /api/clip/transaction/{receipt}` y `GET /api/clip/transactions` | ❌ No |
+| `clip_status_check.pb.js` | Ruta: `GET /api/clip/order/{id}/status` | ❌ No |
 | `my_app_clip_handler.pb.js` | Tu lógica de negocio después del pago | ✅ **Sí — este es tuyo** |
 | `pb_migrations/1721500000_clip_collections.js` | Crea `clip_orders` y `clip_payments` | ❌ No |
+| `pb_migrations/1721500002_add_refund_fields.js` | Agrega campos de reembolso a `clip_orders` | ❌ No |
 
 ---
 
