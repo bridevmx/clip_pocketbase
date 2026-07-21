@@ -1,28 +1,47 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Clip does not expose a verifiable HMAC signature on public webhooks.
-// Security strategy: the webhook only triggers a re-query of the real
-// payment state via GET /v2/checkout/{id}; we never trust the payload alone.
+// Clip v2 Checkout Webhook handler.
+//
+// Clip sends a minimal notification payload — the plugin re-queries the
+// Clip API for the real payment state before updating any record.
+// We never trust the webhook payload alone.
+//
+// Clip v2 webhook payload shape:
+//   {
+//     "id": "<webhook-event-uuid>",
+//     "api_version": "1.0",
+//     "payment_request_id": "<clip-payment-uuid>",
+//     "transaction_id": "<clip-transaction-uuid>",
+//     "resource": "CHECKOUT",
+//     "resource_status": "CREATED" | "PENDING" | "COMPLETED" | "CANCELED" | "EXPIRED",
+//     "detail_type": "...",
+//     "attempts": 1,
+//     "sent_date": "...",
+//     "created_at": "..."
+//   }
 
 routerAdd("POST", "/api/clip/webhook", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
 
   const body = e.requestInfo().body;
 
-  if (!body || !body["id"] || !body["origin"] || !body["event_type"]) {
-    $app.logger().error("Clip webhook: invalid payload", "body", JSON.stringify(body));
-    throw new BadRequestError("Invalid payload");
+  // Require at minimum a payment_request_id to proceed.
+  // Accept both v2 format (payment_request_id) and legacy format (id + origin).
+  const paymentRequestId = body["payment_request_id"] || body["id"];
+
+  if (!paymentRequestId) {
+    $app.logger().error("Clip webhook: missing payment_request_id", "body", JSON.stringify(body));
+    throw new BadRequestError("Invalid payload: missing payment_request_id");
   }
 
-  const paymentRequestId = body["id"];
+  // Legacy format filter: if the payload has origin field and it's not a
+  // recognised source, ignore it silently.
   const origin = body["origin"];
-
-  $app.logger().info("Clip webhook received", "id", paymentRequestId, "origin", origin);
-
-  // Clip v2 sends origin "payments-api"; v1 sent "checkout-api".
-  // Accept both for backwards compatibility.
-  if (origin !== "payments-api" && origin !== "checkout-api") {
+  if (origin && origin !== "checkout-api" && origin !== "payments-api") {
+    $app.logger().info("Clip webhook: ignored unknown origin", "origin", origin);
     return e.json(200, { status: "ignored" });
   }
+
+  $app.logger().info("Clip webhook received", "payment_request_id", paymentRequestId);
 
   // Query real payment state from Clip API (single source of truth).
   let clipPayment;
@@ -30,14 +49,14 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     clipPayment = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
     $app.logger().error("Clip webhook: error querying Clip API", "error", err.message);
-    // Throw a real HTTP 502 so Clip retries the webhook delivery.
+    // Throw HTTP 502 so Clip retries webhook delivery automatically.
     throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
 
-  // v2 uses "status" field (not "resource_status"), amount is top-level.
+  // v2 GET /checkout/{id} returns "status" at top level.
   const resourceStatus = clipPayment["status"] || clipPayment["resource_status"];
-  const receiptNo = clipPayment["receipt_no"] || null;
-  const amountPaid = clipPayment["amount"] || 0;
+  const receiptNo      = clipPayment["receipt_no"] || null;
+  const amountPaid     = clipPayment["amount"] || 0;
 
   // Find the matching clip_order by payment_request_id.
   let orders;
@@ -63,7 +82,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     return e.json(200, { status: "already_processed" });
   }
 
-  // Normalise the status value from Clip to a value accepted by the DB schema.
   const normalisedStatus = normaliseClipStatus(resourceStatus);
 
   $app.runInTransaction((txApp) => {
@@ -93,29 +111,29 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 });
 
 /**
- * Maps a raw Clip v2 status value to one of the allowed DB select values.
- * Unknown or unexpected values are stored as PENDING so no DB save is rejected.
+ * Maps a raw Clip v2 status to one of the allowed DB select values.
  *
- * Clip v2 documented statuses:
+ * v2 GET /checkout/{id} returns status with CHECKOUT_ prefix:
  *   CHECKOUT_CREATED    → CREATED
  *   CHECKOUT_PENDING    → PENDING
  *   CHECKOUT_COMPLETED  → COMPLETED
  *   CHECKOUT_CANCELED   → CANCELED
  *   CHECKOUT_EXPIRED    → EXPIRED
  *
+ * v1 / webhook resource_status values kept for compatibility:
+ *   CREATED / PENDING / COMPLETED / CANCELED / EXPIRED
+ *
  * @param {string} raw
  * @returns {"CREATED"|"PENDING"|"COMPLETED"|"CANCELED"|"EXPIRED"}
  */
 function normaliseClipStatus(raw) {
   const ALLOWED = {
-    // v2 prefixed statuses
     CHECKOUT_CREATED:   "CREATED",
     CHECKOUT_PENDING:   "PENDING",
     CHECKOUT_COMPLETED: "COMPLETED",
     CHECKOUT_CANCELED:  "CANCELED",
     CHECKOUT_CANCELLED: "CANCELED",
     CHECKOUT_EXPIRED:   "EXPIRED",
-    // v1 / legacy statuses (kept for backwards compatibility)
     CREATED:   "CREATED",
     PENDING:   "PENDING",
     COMPLETED: "COMPLETED",

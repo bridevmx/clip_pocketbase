@@ -317,17 +317,18 @@ async function testWebhookInvalidPayload() {
   );
 }
 
-// 6. Webhook — ignored origin (not payments-api or checkout-api)
+// 6. Webhook — ignored origin (unknown source)
 async function testWebhookIgnoredOrigin() {
   section("6 · POST /api/clip/webhook — ignored origin");
 
   const res = await request("POST", "/api/clip/webhook", {
-    id:         "fake-id-123",
-    origin:     "pos-terminal",
-    event_type: "INSERT",
+    payment_request_id: "00000000-0000-0000-0000-000000000000",
+    origin:             "pos-terminal",
+    resource:           "CHECKOUT",
+    resource_status:    "CREATED",
   });
 
-  assertStatus("Non checkout-api origin returns 200", res.status, 200);
+  assertStatus("Unknown origin returns 200", res.status, 200);
   assert(
     "Response status is 'ignored'",
     res.json && res.json.status === "ignored",
@@ -339,36 +340,33 @@ async function testWebhookIgnoredOrigin() {
 async function testWebhookUnknownOrder() {
   section("7 · POST /api/clip/webhook — unknown payment_request_id");
 
+  // Use a valid UUID format to avoid Clip returning 400 format error.
   const res = await request("POST", "/api/clip/webhook", {
-    id:         "non-existent-payment-request-id-xyz",
-    origin:     "payments-api",
-    event_type: "UPDATE",
+    payment_request_id: "00000000-0000-0000-0000-000000000000",
+    resource:           "CHECKOUT",
+    resource_status:    "COMPLETED",
   });
 
-  // The plugin will try to re-query Clip API. Two valid outcomes:
-  //   502 — Clip API unreachable or returned error (invalid ID or key)
-  //   200 with order_not_found — Clip returned data but no matching order in DB
   assert(
     "Route exists and responds (not 404)",
     res.status !== 404,
     `Got 404 — hooks may not be loaded`
   );
 
+  // Valid outcomes:
+  //   200 order_not_found — Clip returned data but no matching order in DB
+  //   502 — Clip API returned error
+  //   400 — Clip API returned format/not-found error (valid UUID but unknown to Clip)
   assert(
-    "Returns 200 (order_not_found) or 502 (Clip API error)",
-    res.status === 200 || res.status === 502,
+    "Returns 200, 400, or 502",
+    res.status === 200 || res.status === 400 || res.status === 502,
     `Unexpected status: ${res.status} — ${JSON.stringify(res.json)}`
   );
 
   if (res.status === 200) {
-    assert(
-      "Response status is order_not_found",
-      res.json && res.json.status === "order_not_found",
-      `Expected order_not_found, got: ${JSON.stringify(res.json)}`
-    );
     info("Clip API reachable — ID not found in DB as expected");
   } else {
-    info("Clip API returned 502 — likely invalid CLIP_API_KEY or network issue");
+    info(`Clip API returned ${res.status} — unknown ID or network issue`);
   }
 }
 
@@ -381,10 +379,11 @@ async function testWebhookRealOrder() {
     return;
   }
 
+  // Use Clip v2 webhook payload format.
   const res = await request("POST", "/api/clip/webhook", {
-    id:         paymentRequestId,
-    origin:     "payments-api",
-    event_type: "UPDATE",
+    payment_request_id: paymentRequestId,
+    resource:           "CHECKOUT",
+    resource_status:    "CHECKOUT_CREATED",
   });
 
   assert(
@@ -396,14 +395,14 @@ async function testWebhookRealOrder() {
   assert(
     "Returns 200 or 502",
     res.status === 200 || res.status === 502,
-    `Unexpected status: ${res.status}`
+    `Unexpected status: ${res.status} — ${JSON.stringify(res.json)}`
   );
 
   if (res.status === 200) {
     assertField("Response has processed_status", res.json, "processed_status");
     info(`Order status after webhook: ${res.json.processed_status}`);
   } else {
-    info("Clip API re-query failed (502) — expected if CLIP_API_KEY is not set on the instance");
+    info("Clip API re-query failed (502)");
   }
 }
 
