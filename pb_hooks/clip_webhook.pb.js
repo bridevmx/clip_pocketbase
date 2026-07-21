@@ -18,7 +18,9 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 
   $app.logger().info("Clip webhook received", "id", paymentRequestId, "origin", origin);
 
-  if (origin !== "checkout-api") {
+  // Clip v2 sends origin "payments-api"; v1 sent "checkout-api".
+  // Accept both for backwards compatibility.
+  if (origin !== "payments-api" && origin !== "checkout-api") {
     return e.json(200, { status: "ignored" });
   }
 

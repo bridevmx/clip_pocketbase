@@ -317,7 +317,7 @@ async function testWebhookInvalidPayload() {
   );
 }
 
-// 6. Webhook — ignored origin (not checkout-api)
+// 6. Webhook — ignored origin (not payments-api or checkout-api)
 async function testWebhookIgnoredOrigin() {
   section("6 · POST /api/clip/webhook — ignored origin");
 
@@ -341,7 +341,7 @@ async function testWebhookUnknownOrder() {
 
   const res = await request("POST", "/api/clip/webhook", {
     id:         "non-existent-payment-request-id-xyz",
-    origin:     "checkout-api",
+    origin:     "payments-api",
     event_type: "UPDATE",
   });
 
@@ -383,7 +383,7 @@ async function testWebhookRealOrder() {
 
   const res = await request("POST", "/api/clip/webhook", {
     id:         paymentRequestId,
-    origin:     "checkout-api",
+    origin:     "payments-api",
     event_type: "UPDATE",
   });
 
