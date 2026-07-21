@@ -47,6 +47,14 @@ function clipBasicAuthHeader() {
 function clipApiRequest(method, path, payload, timeoutSeconds) {
   const authHeader = clipBasicAuthHeader();
 
+  // DEBUG — log the full request so failures are visible in PocketHost logs.
+  const tokenPreview = authHeader.substring(0, 20) + "...";
+  console.log("[CLIP DEBUG] " + method + " " + CLIP_API_BASE_URL + path);
+  console.log("[CLIP DEBUG] Auth header prefix: " + tokenPreview);
+  if (payload) {
+    console.log("[CLIP DEBUG] Request body: " + JSON.stringify(payload));
+  }
+
   const requestOptions = {
     method: method,
     url: CLIP_API_BASE_URL + path,
@@ -63,6 +71,10 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
   }
 
   const res = $http.send(requestOptions);
+
+  // DEBUG — log the full response so failures are visible in PocketHost logs.
+  console.log("[CLIP DEBUG] Response status: " + res.statusCode);
+  console.log("[CLIP DEBUG] Response body: " + res.raw);
 
   if (res.statusCode < 200 || res.statusCode > 299) {
     throw new Error(
