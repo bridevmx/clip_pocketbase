@@ -340,11 +340,12 @@ async function testWebhookIgnoredOrigin() {
 async function testWebhookUnknownOrder() {
   section("7 · POST /api/clip/webhook — unknown payment_request_id");
 
-  // Use a valid UUID format to avoid Clip returning 400 format error.
+  // Use a valid UUID format — Clip returns 404 for valid-but-unknown UUIDs,
+  // 400 for malformed UUIDs. We test the valid-UUID path here.
   const res = await request("POST", "/api/clip/webhook", {
     payment_request_id: "00000000-0000-0000-0000-000000000000",
     resource:           "CHECKOUT",
-    resource_status:    "COMPLETED",
+    resource_status:    "CHECKOUT_CREATED",
   });
 
   assert(
@@ -354,19 +355,20 @@ async function testWebhookUnknownOrder() {
   );
 
   // Valid outcomes:
+  //   200 clip_not_found  — Clip returned 404 (unknown UUID)
   //   200 order_not_found — Clip returned data but no matching order in DB
-  //   502 — Clip API returned error
-  //   400 — Clip API returned format/not-found error (valid UUID but unknown to Clip)
+  //   200 clip_format_error — Clip returned 400
+  //   502 — Clip API unreachable
   assert(
-    "Returns 200, 400, or 502",
-    res.status === 200 || res.status === 400 || res.status === 502,
+    "Returns 200 or 502",
+    res.status === 200 || res.status === 502,
     `Unexpected status: ${res.status} — ${JSON.stringify(res.json)}`
   );
 
   if (res.status === 200) {
-    info("Clip API reachable — ID not found in DB as expected");
+    info(`Webhook responded: ${res.json && res.json.status}`);
   } else {
-    info(`Clip API returned ${res.status} — unknown ID or network issue`);
+    info("Clip API returned 502 — network or auth issue");
   }
 }
 
