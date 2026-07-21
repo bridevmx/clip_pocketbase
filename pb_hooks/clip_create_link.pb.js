@@ -6,6 +6,7 @@
 // Depends on: clip_api_client.pb.js (loaded automatically by PocketBase).
 
 routerAdd("POST", "/api/clip/create-link", (e) => {
+  console.log("[CLIP CREATE] Handler invoked");
   const info = e.requestInfo();
   const body = info.body;
 
@@ -24,6 +25,8 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   }
 
   const webhookBaseUrl = $os.getenv("POCKETBASE_URL");
+  console.log("[CLIP CREATE] POCKETBASE_URL: " + webhookBaseUrl);
+  console.log("[CLIP CREATE] clipApiRequest available: " + (typeof clipApiRequest));
 
   // Create the order record before calling Clip so we always have a local
   // record even if the Clip API call fails later.
@@ -62,6 +65,8 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
       20
     );
   } catch (err) {
+    console.log("[CLIP CREATE] ERROR: " + err.message);
+    console.log("[CLIP CREATE] ERROR stack: " + (err.stack || "no stack"));
     $app.logger().error("Error creating Clip payment link", "error", err.message);
     order.set("status", "ERROR_CLIP");
     $app.save(order);
