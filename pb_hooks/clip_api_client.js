@@ -137,11 +137,88 @@ function normaliseClipStatus(raw) {
   return mapped;
 }
 
+// ─── REFUND ─────────────────────────────────────────────────────────────────
+
+/**
+ * Requests a refund for a completed transaction.
+ *
+ * Clip API: POST /refunds
+ * @param {string} receiptNo   — Clip receipt number (e.g. "PuGCZDqV")
+ * @param {number|null} amount — Amount to refund in MXN (null = full refund)
+ * @param {string} reason      — Reason for the refund
+ * @returns {{ data: object, statusCode: number }}
+ */
+function clipRefund(receiptNo, amount, reason) {
+  const payload = { receipt_no: receiptNo };
+  if (amount !== null && amount !== undefined) {
+    payload.amount = amount;
+  }
+  if (reason) {
+    payload.reason = reason;
+  }
+  return clipApiRequest("POST", "/refunds", payload, 20);
+}
+
+// ─── TRANSACTIONS ───────────────────────────────────────────────────────────
+
+/**
+ * Retrieves transaction details by receipt number.
+ *
+ * Clip API: GET /transactions/{receipt_no}
+ * @param {string} receiptNo — Clip receipt number
+ * @returns {{ data: object, statusCode: number }}
+ */
+function clipGetTransaction(receiptNo) {
+  return clipApiRequest("GET", "/transactions/" + receiptNo, null, 15);
+}
+
+/**
+ * Lists transactions within a date range (max 30 days).
+ *
+ * Clip API: GET /transactions?from=YYYY-MM-DD&to=YYYY-MM-DD
+ * @param {string} from    — Start date YYYY-MM-DD
+ * @param {string} to      — End date YYYY-MM-DD
+ * @param {number} page    — Page number (default: 1)
+ * @param {number} perPage — Records per page (default: 50)
+ * @returns {{ data: object, statusCode: number }}
+ */
+function clipListTransactions(from, to, page, perPage) {
+  // Validate 30-day range
+  var fromDate = new Date(from);
+  var toDate = new Date(to);
+  var diffMs = toDate.getTime() - fromDate.getTime();
+  var diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays > 30) {
+    return {
+      data: { error: "RANGE_EXCEEDED", message: "Date range cannot exceed 30 days" },
+      statusCode: 400,
+    };
+  }
+
+  var params = "from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
+  if (page) params += "&page=" + encodeURIComponent(page.toString());
+  if (perPage) params += "&per_page=" + encodeURIComponent(perPage.toString());
+
+  return clipApiRequest("GET", "/transactions?" + params, null, 20);
+}
+
+// ─── EXPORTS ────────────────────────────────────────────────────────────────
+
 module.exports = {
   request: clipApiRequest,
   normaliseClipStatus: normaliseClipStatus,
+  refund: clipRefund,
+  getTransaction: clipGetTransaction,
+  listTransactions: clipListTransactions,
 
   // Clip v2 error code constants for callers.
   ERR_FORMAT:    "002", // Format validation error — bad input
   ERR_NOT_FOUND: "021", // Payment Request ID doesn't exist
+
+  // Refund error constants.
+  REFUND_ERRORS: {
+    INSUFFICIENT_BALANCE: "INSUFFICIENT_BALANCE",
+    REFUND_NOT_ALLOWED:   "REFUND_NOT_ALLOWED",
+    TRANSACTION_NOT_FOUND: "TRANSACTION_NOT_FOUND",
+  },
 };
