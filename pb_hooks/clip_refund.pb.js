@@ -22,7 +22,14 @@ routerAdd("POST", "/api/clip/refund", (e) => {
   const body = info.body;
 
   // Requires superuser auth
-  if (!info.auth || !info.auth.isSuperUser) {
+  // PocketBase doesn't expose isSuperUser on info.auth, so we verify
+  // the authenticated user exists in the _superusers collection.
+  if (!info.auth || !info.auth.id) {
+    throw new ForbiddenError("Authentication required");
+  }
+  try {
+    $app.findRecordById("_superusers", info.auth.id);
+  } catch (_) {
     throw new ForbiddenError("Superuser authentication required");
   }
 
