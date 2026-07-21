@@ -57,7 +57,11 @@ migrate((app) => {
     name: "clip_orders",
     fields: orderFields,
     indexes: [
-      "CREATE UNIQUE INDEX idx_clip_orders_payment_request_id ON clip_orders (clip_payment_request_id)",
+      // Partial unique index: enforces uniqueness only when the field has a
+      // non-empty value. This allows multiple orders to have an empty
+      // clip_payment_request_id while the order record is being created
+      // (before the Clip API responds with the real ID).
+      "CREATE UNIQUE INDEX idx_clip_orders_payment_request_id ON clip_orders (clip_payment_request_id) WHERE clip_payment_request_id != ''",
     ],
   });
   app.save(orders);
