@@ -91,8 +91,55 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
   };
 }
 
+/**
+ * Maps a raw Clip v2 status to one of the allowed DB select values.
+ *
+ * v2 GET /checkout/{id} returns status with CHECKOUT_ prefix:
+ *   CHECKOUT_CREATED    → CREATED
+ *   CHECKOUT_PENDING    → PENDING
+ *   CHECKOUT_COMPLETED  → COMPLETED
+ *   CHECKOUT_CANCELED   → CANCELED
+ *   CHECKOUT_EXPIRED    → EXPIRED
+ *
+ * v1 / webhook resource_status values kept for compatibility:
+ *   CREATED / PENDING / COMPLETED / CANCELED / EXPIRED
+ *
+ * @param {string} raw
+ * @returns {"CREATED"|"PENDING"|"COMPLETED"|"CANCELED"|"EXPIRED"}
+ */
+function normaliseClipStatus(raw) {
+  const ALLOWED = {
+    CHECKOUT_CREATED:   "CREATED",
+    CHECKOUT_PENDING:   "PENDING",
+    CHECKOUT_COMPLETED: "COMPLETED",
+    CHECKOUT_CANCELED:  "CANCELED",
+    CHECKOUT_CANCELLED: "CANCELED",
+    CHECKOUT_EXPIRED:   "EXPIRED",
+    CREATED:   "CREATED",
+    PENDING:   "PENDING",
+    COMPLETED: "COMPLETED",
+    CANCELED:  "CANCELED",
+    CANCELLED: "CANCELED",
+    EXPIRED:   "EXPIRED",
+  };
+
+  const upper = (raw || "").toString().toUpperCase().trim();
+  const mapped = ALLOWED[upper];
+
+  if (!mapped) {
+    $app.logger().warn(
+      "Clip webhook: unknown status received, defaulting to PENDING",
+      "raw_status", raw
+    );
+    return "PENDING";
+  }
+
+  return mapped;
+}
+
 module.exports = {
   request: clipApiRequest,
+  normaliseClipStatus: normaliseClipStatus,
 
   // Clip v2 error code constants for callers.
   ERR_FORMAT:    "002", // Format validation error — bad input

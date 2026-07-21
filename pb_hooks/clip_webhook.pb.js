@@ -78,7 +78,7 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 
   const order = orders[0];
   const currentStatus = order.getString("status");
-  const normalisedStatus = normaliseClipStatus(resourceStatus);
+  const normalisedStatus = clip.normaliseClipStatus(resourceStatus);
 
   // Idempotency: skip if the order is already in its final state (COMPLETED, CANCELED, EXPIRED)
   // or if the status hasn't changed.
@@ -111,33 +111,3 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 
   return e.json(200, { status: "ok", processed_status: normalisedStatus });
 });
-
-function normaliseClipStatus(raw) {
-  const ALLOWED = {
-    CHECKOUT_CREATED:   "CREATED",
-    CHECKOUT_PENDING:   "PENDING",
-    CHECKOUT_COMPLETED: "COMPLETED",
-    CHECKOUT_CANCELED:  "CANCELED",
-    CHECKOUT_CANCELLED: "CANCELED",
-    CHECKOUT_EXPIRED:   "EXPIRED",
-    CREATED:   "CREATED",
-    PENDING:   "PENDING",
-    COMPLETED: "COMPLETED",
-    CANCELED:  "CANCELED",
-    CANCELLED: "CANCELED",
-    EXPIRED:   "EXPIRED",
-  };
-
-  const upper = (raw || "").toString().toUpperCase().trim();
-  const mapped = ALLOWED[upper];
-
-  if (!mapped) {
-    $app.logger().warn(
-      "Clip webhook: unknown status received, defaulting to PENDING",
-      "raw_status", raw
-    );
-    return "PENDING";
-  }
-
-  return mapped;
-}
