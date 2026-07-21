@@ -1,16 +1,16 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-//  CLIP PAYMENT PLUGIN — Archivo de referencia (NO EDITAR)
+//  CLIP PAYMENT PLUGIN — Reference file (DO NOT EDIT)
 // ─────────────────────────────────────────────────────────────────────────
-// Este plugin NO conoce tu modelo de negocio. Solo gestiona:
-//   - Colección: clip_orders   (orden de cobro genérica)
-//   - Colección: clip_payments (bitácora de eventos)
-//   - Ruta:      POST /api/clip/create-link
-//   - Ruta:      POST /api/clip/webhook
+// This plugin does NOT know your business logic. It only manages:
+//   - Collection: clip_orders   (generic payment order)
+//   - Collection: clip_payments (raw event audit log)
+//   - Route:      POST /api/clip/create-link
+//   - Route:      POST /api/clip/webhook
 //
-// Para conectar tu lógica de negocio (activar producto, mandar email,
-// desbloquear acceso, etc.), NO edites los archivos clip_*.pb.js.
-// Crea/edita en su lugar:
+// To connect your business logic (activate product, send email,
+// unlock access, etc.), do NOT edit the clip_*.pb.js files.
+// Instead, create or edit:
 //
 //     pb_hooks/my_app_clip_handler.pb.js
 //
@@ -19,11 +19,11 @@
 onBootstrap((e) => {
     e.next();
     console.log("");
-    console.log("🔌 [CLIP PLUGIN] Cargado correctamente.");
-    console.log("🔌 [CLIP PLUGIN] Colecciones esperadas: clip_orders, clip_payments");
-    console.log("🔌 [CLIP PLUGIN] Rutas activas: POST /api/clip/create-link, POST /api/clip/webhook");
-    console.log("🔌 [CLIP PLUGIN] Ruta exacta para tu lógica de negocio ->");
-    console.log("🔌 [CLIP PLUGIN]   pb_hooks/my_app_clip_handler.pb.js");
-    console.log("🔌 [CLIP PLUGIN] Escucha: onRecordAfterUpdateSuccess((e) => {...}, \"clip_orders\")");
+    console.log("[CLIP PLUGIN] Loaded successfully.");
+    console.log("[CLIP PLUGIN] Expected collections: clip_orders, clip_payments");
+    console.log("[CLIP PLUGIN] Active routes: POST /api/clip/create-link, POST /api/clip/webhook");
+    console.log("[CLIP PLUGIN] To add your business logic after payment, create/edit:");
+    console.log("[CLIP PLUGIN]   -> pb_hooks/my_app_clip_handler.pb.js");
+    console.log("[CLIP PLUGIN]   -> Listen: onRecordAfterUpdateSuccess((e) => {...}, \"clip_orders\")");
     console.log("");
 });

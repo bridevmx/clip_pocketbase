@@ -1,7 +1,14 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// TU LÓGICA DE NEGOCIO — este archivo NO es parte del plugin de Clip.
-// Edítalo libremente. Se ejecuta cuando una clip_order cambia de estado.
+// YOUR BUSINESS LOGIC — this file is NOT part of the Clip plugin.
+// Edit it freely. It runs whenever a clip_order changes state.
+//
+// The fields available on the clip_order record:
+//   - status              (CREATED | PENDING | COMPLETED | CANCELED | EXPIRED)
+//   - reference_collection (the name of your host collection, e.g. "products")
+//   - reference_id         (the record ID in that collection)
+//   - user                 (the PocketBase user ID, or empty for guest checkouts)
+//   - amount / amount_paid / receipt_no / paid_at / canceled_at
 // ─────────────────────────────────────────────────────────────────────────
 
 onRecordAfterUpdateSuccess((e) => {
@@ -13,14 +20,16 @@ onRecordAfterUpdateSuccess((e) => {
         const userId = e.record.getString("user");
 
         $app.logger().info(
-            "✅ Pago completado, activar lógica de negocio",
+            "Payment completed — run your business activation logic here",
             "reference_collection", refCollection,
             "reference_id", refId,
-            "user", userId
+            "user", userId || "guest"
         );
 
-        // TODO: aquí tu lógica -> activar producto, mandar email,
-        // desbloquear un viaje, marcar un pedido de repostería como pagado, etc.
+        // TODO: add your logic here, for example:
+        //   - activate a product / subscription
+        //   - send a confirmation email
+        //   - unlock a trip or order in your own collection
     }
 
     e.next();
