@@ -401,8 +401,14 @@ async function testWebhookRealOrder() {
   );
 
   if (res.status === 200) {
-    assertField("Response has processed_status", res.json, "processed_status");
-    info(`Order status after webhook: ${res.json.processed_status}`);
+    assert(
+      "Webhook responded with ok or already_processed",
+      res.json && (res.json.status === "ok" || res.json.status === "already_processed"),
+      `Expected status 'ok' or 'already_processed', got: ${JSON.stringify(res.json)}`
+    );
+    if (res.json.processed_status) {
+      info(`Order status after webhook: ${res.json.processed_status}`);
+    }
   } else {
     info("Clip API re-query failed (502)");
   }

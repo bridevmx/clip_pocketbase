@@ -4,28 +4,12 @@
 // Clip sends a minimal notification payload — the plugin re-queries the
 // Clip API for the real payment state before updating any record.
 // We never trust the webhook payload alone.
-//
-// Clip v2 webhook payload shape:
-//   {
-//     "id": "<webhook-event-uuid>",
-//     "api_version": "1.0",
-//     "payment_request_id": "<clip-payment-uuid>",
-//     "transaction_id": "<clip-transaction-uuid>",
-//     "resource": "CHECKOUT",
-//     "resource_status": "CREATED" | "PENDING" | "COMPLETED" | "CANCELED" | "EXPIRED",
-//     "detail_type": "...",
-//     "attempts": 1,
-//     "sent_date": "...",
-//     "created_at": "..."
-//   }
 
 routerAdd("POST", "/api/clip/webhook", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
 
   const body = e.requestInfo().body;
 
-  // Require at minimum a payment_request_id to proceed.
-  // Accept both v2 format (payment_request_id) and legacy format (id + origin).
   const paymentRequestId = body["payment_request_id"] || body["id"];
 
   if (!paymentRequestId) {
@@ -33,8 +17,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     throw new BadRequestError("Invalid payload: missing payment_request_id");
   }
 
-  // Legacy format filter: if the payload has origin field and it's not a
-  // recognised source, ignore it silently.
   const origin = body["origin"];
   if (origin && origin !== "checkout-api" && origin !== "payments-api") {
     $app.logger().info("Clip webhook: ignored unknown origin", "origin", origin);
@@ -49,17 +31,14 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     clipResult = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
     $app.logger().error("Clip webhook: network error querying Clip API", "error", err.message);
-    // Throw HTTP 502 so Clip retries webhook delivery automatically.
     throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
 
-  // 404 — valid UUID but Clip doesn't know it. Nothing to do.
   if (clipResult.statusCode === 404) {
     $app.logger().warn("Clip webhook: payment_request_id not found in Clip", "id", paymentRequestId);
     return e.json(200, { status: "clip_not_found" });
   }
 
-  // 400 — malformed UUID or format error. Log and return 200 (don't retry).
   if (clipResult.statusCode === 400) {
     const errBody = clipResult.data || {};
     $app.logger().error(
@@ -71,19 +50,11 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     return e.json(200, { status: "clip_format_error" });
   }
 
-  // Any other non-2xx → 502 to trigger Clip retry.
   if (clipResult.statusCode < 200 || clipResult.statusCode > 299) {
-    $app.logger().error(
-      "Clip webhook: unexpected status from Clip API",
-      "status", clipResult.statusCode,
-      "body", JSON.stringify(clipResult.data)
-    );
     throw new ApiError(502, "Unexpected Clip API response. Retry later.");
   }
 
   const clipPayment = clipResult.data;
-
-  // v2 GET /checkout/{id} returns "status" at top level.
   const resourceStatus = clipPayment["status"] || clipPayment["resource_status"];
   const receiptNo      = clipPayment["receipt_no"] || null;
   const amountPaid     = clipPayment["amount"] || 0;
@@ -106,13 +77,14 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   }
 
   const order = orders[0];
-
-  // Idempotency guard: skip already-completed orders.
-  if (order.getString("status") === "COMPLETED") {
-    return e.json(200, { status: "already_processed" });
-  }
-
+  const currentStatus = order.getString("status");
   const normalisedStatus = normaliseClipStatus(resourceStatus);
+
+  // Idempotency: skip if the order is already in its final state (COMPLETED, CANCELED, EXPIRED)
+  // or if the status hasn't changed.
+  if (currentStatus === "COMPLETED" || currentStatus === "CANCELED" || currentStatus === "EXPIRED" || currentStatus === normalisedStatus) {
+    return e.json(200, { status: "already_processed", processed_status: currentStatus });
+  }
 
   $app.runInTransaction((txApp) => {
     order.set("status", normalisedStatus);
@@ -127,7 +99,7 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     }
     txApp.save(order);
 
-    // Audit log: always record the raw webhook and API response.
+    // Audit log: record the webhook event.
     const paymentsCollection = txApp.findCollectionByNameOrId("clip_payments");
     const log = new Record(paymentsCollection);
     log.set("order", order.id);
@@ -140,22 +112,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   return e.json(200, { status: "ok", processed_status: normalisedStatus });
 });
 
-/**
- * Maps a raw Clip v2 status to one of the allowed DB select values.
- *
- * v2 GET /checkout/{id} returns status with CHECKOUT_ prefix:
- *   CHECKOUT_CREATED    → CREATED
- *   CHECKOUT_PENDING    → PENDING
- *   CHECKOUT_COMPLETED  → COMPLETED
- *   CHECKOUT_CANCELED   → CANCELED
- *   CHECKOUT_EXPIRED    → EXPIRED
- *
- * v1 / webhook resource_status values kept for compatibility:
- *   CREATED / PENDING / COMPLETED / CANCELED / EXPIRED
- *
- * @param {string} raw
- * @returns {"CREATED"|"PENDING"|"COMPLETED"|"CANCELED"|"EXPIRED"}
- */
 function normaliseClipStatus(raw) {
   const ALLOWED = {
     CHECKOUT_CREATED:   "CREATED",
