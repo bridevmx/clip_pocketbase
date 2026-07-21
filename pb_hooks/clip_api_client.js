@@ -1,15 +1,17 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// Clip API client helper — shared by all clip_*.pb.js hooks.
+// Clip API client — CommonJS module, shared via require().
 //
-// NOTE: PocketBase's JS runtime (Goja) does not provide the browser's
-// btoa() global. Base64 encoding must be done via Buffer (available in
-// PocketBase v0.23+). This module centralises that concern so no other
-// file needs to know about it.
+// Usage in any pb_hooks/*.pb.js file:
+//   const clip = require(`${__hooks}/clip_api_client.js`);
+//   const data = clip.request("POST", "/v2/checkout", payload, 20);
+//
+// NOTE: This file does NOT use the .pb.js extension on purpose — PocketBase
+// only auto-executes *.pb.js files as hooks. This file is a plain module
+// loaded explicitly via require() to share scope correctly across hooks.
 // ─────────────────────────────────────────────────────────────────────────
 
 const CLIP_API_BASE_URL = "https://api.payclip.com";
-const CLIP_API_VERSION = "v2";
 
 /**
  * Returns the Basic Auth header value for the Clip API.
@@ -38,7 +40,7 @@ function clipBasicAuthHeader() {
  * Sends an authenticated HTTP request to the Clip API.
  *
  * @param {"GET"|"POST"} method
- * @param {string} path   — e.g. "/v1/checkout" or "/v1/checkout/{id}"
+ * @param {string} path          — e.g. "/v2/checkout" or "/v2/checkout/{id}"
  * @param {object|null} payload  — request body (serialised to JSON), or null
  * @param {number} timeoutSeconds
  * @returns {object}  parsed JSON response body
@@ -47,7 +49,7 @@ function clipBasicAuthHeader() {
 function clipApiRequest(method, path, payload, timeoutSeconds) {
   const authHeader = clipBasicAuthHeader();
 
-  // DEBUG — log the full request so failures are visible in PocketHost logs.
+  // DEBUG — visible in PocketHost instance logs.
   const tokenPreview = authHeader.substring(0, 20) + "...";
   console.log("[CLIP DEBUG] " + method + " " + CLIP_API_BASE_URL + path);
   console.log("[CLIP DEBUG] Auth header prefix: " + tokenPreview);
@@ -72,7 +74,6 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
 
   const res = $http.send(requestOptions);
 
-  // DEBUG — log the full response so failures are visible in PocketHost logs.
   console.log("[CLIP DEBUG] Response status: " + res.statusCode);
   console.log("[CLIP DEBUG] Response body: " + res.raw);
 
@@ -84,3 +85,7 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
 
   return res.json;
 }
+
+module.exports = {
+  request: clipApiRequest,
+};

@@ -1,11 +1,11 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Clip does not expose a verifiable HMAC signature on public webhooks.
 // Security strategy: the webhook only triggers a re-query of the real
-// payment state via GET /checkout/{id}; we never trust the payload alone.
-//
-// Depends on: clip_api_client.pb.js (loaded automatically by PocketBase).
+// payment state via GET /v2/checkout/{id}; we never trust the payload alone.
 
 routerAdd("POST", "/api/clip/webhook", (e) => {
+  const clip = require(`${__hooks}/clip_api_client.js`);
+
   const body = e.requestInfo().body;
 
   if (!body || !body["id"] || !body["origin"] || !body["event_type"]) {
@@ -25,12 +25,10 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   // Query real payment state from Clip API (single source of truth).
   let clipPayment;
   try {
-    clipPayment = clipApiRequest("GET", "/v2/checkout/" + paymentRequestId, null, 15);
+    clipPayment = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
   } catch (err) {
     $app.logger().error("Clip webhook: error querying Clip API", "error", err.message);
     // Throw a real HTTP 502 so Clip retries the webhook delivery.
-    // Using e.json(502) is not reliable in all PocketBase versions;
-    // throwing ApiError guarantees the status code is propagated.
     throw new ApiError(502, "Could not verify payment with Clip API. Retry later.");
   }
 
@@ -97,11 +95,11 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
  * Unknown or unexpected values are stored as PENDING so no DB save is rejected.
  *
  * Clip v2 documented statuses:
- *   CHECKOUT_CREATED → CREATED
- *   CHECKOUT_PENDING → PENDING
- *   CHECKOUT_COMPLETED → COMPLETED
- *   CHECKOUT_CANCELED / CHECKOUT_CANCELLED → CANCELED
- *   CHECKOUT_EXPIRED → EXPIRED
+ *   CHECKOUT_CREATED    → CREATED
+ *   CHECKOUT_PENDING    → PENDING
+ *   CHECKOUT_COMPLETED  → COMPLETED
+ *   CHECKOUT_CANCELED   → CANCELED
+ *   CHECKOUT_EXPIRED    → EXPIRED
  *
  * @param {string} raw
  * @returns {"CREATED"|"PENDING"|"COMPLETED"|"CANCELED"|"EXPIRED"}

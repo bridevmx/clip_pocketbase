@@ -2,11 +2,10 @@
 // Endpoint to create a Clip payment link from PocketBase.
 // Authentication is optional: if a user is logged in, the order is linked
 // to their account; anonymous (guest) checkouts are also supported.
-//
-// Depends on: clip_api_client.pb.js (loaded automatically by PocketBase).
 
 routerAdd("POST", "/api/clip/create-link", (e) => {
-  console.log("[CLIP CREATE] Handler invoked");
+  const clip = require(`${__hooks}/clip_api_client.js`);
+
   const info = e.requestInfo();
   const body = info.body;
 
@@ -25,8 +24,6 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   }
 
   const webhookBaseUrl = $os.getenv("POCKETBASE_URL");
-  console.log("[CLIP CREATE] POCKETBASE_URL: " + webhookBaseUrl);
-  console.log("[CLIP CREATE] clipApiRequest available: " + (typeof clipApiRequest));
 
   // Create the order record before calling Clip so we always have a local
   // record even if the Clip API call fails later.
@@ -48,7 +45,7 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   // Call the Clip API to create the payment link.
   let clipData;
   try {
-    clipData = clipApiRequest(
+    clipData = clip.request(
       "POST",
       "/v2/checkout",
       {
@@ -65,8 +62,6 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
       20
     );
   } catch (err) {
-    console.log("[CLIP CREATE] ERROR: " + err.message);
-    console.log("[CLIP CREATE] ERROR stack: " + (err.stack || "no stack"));
     $app.logger().error("Error creating Clip payment link", "error", err.message);
     order.set("status", "ERROR_CLIP");
     $app.save(order);
