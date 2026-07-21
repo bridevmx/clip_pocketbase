@@ -144,12 +144,19 @@ function normaliseClipStatus(raw) {
  *
  * Clip API: POST /refunds
  * @param {string} receiptNo   — Clip receipt number (e.g. "PuGCZDqV")
+ * @param {string} orderId     — Our internal order ID for the reference
  * @param {number|null} amount — Amount to refund in MXN (null = full refund)
  * @param {string} reason      — Reason for the refund
  * @returns {{ data: object, statusCode: number }}
  */
-function clipRefund(receiptNo, amount, reason) {
-  const payload = { receipt_no: receiptNo };
+function clipRefund(receiptNo, orderId, amount, reason) {
+  const payload = {
+    receipt_no: receiptNo,
+    reference: {
+      type: "ORDER_ID",
+      id: orderId,
+    },
+  };
   if (amount !== null && amount !== undefined) {
     payload.amount = amount;
   }

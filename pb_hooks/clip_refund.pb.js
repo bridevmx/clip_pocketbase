@@ -74,7 +74,7 @@ routerAdd("POST", "/api/clip/refund", (e) => {
   // Call Clip API
   var clipResult;
   try {
-    clipResult = clip.refund(receiptNo, amount, reason);
+    clipResult = clip.refund(receiptNo, orderId, amount, reason);
   } catch (err) {
     $app.logger().error("[CLIP REFUND] API call failed", "error", err.message);
     throw new InternalServerError("Could not process refund");
