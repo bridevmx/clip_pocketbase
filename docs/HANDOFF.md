@@ -236,7 +236,7 @@ f39d803 feat: add refund and transaction functions to api_client, add refund fie
 - ✅ Real $1 payment + refund verified on Easypanel
 - ✅ Full README documentation
 
-### SPEI Plugin (IMPLEMENTED + CODE REVIEWED)
+### SPEI Plugin (DEPLOYED)
 - ✅ 4 collections created via migrations
 - ✅ ~100 banks seeded
 - ✅ CommonJS API client with shared functions
@@ -248,17 +248,18 @@ f39d803 feat: add refund and transaction functions to api_client, add refund fie
 - ✅ Code review completed (auth check, shared logic, English names)
 - ✅ Dockerfile + GitHub Actions workflow
 - ✅ README + DEPLOY guide
+- ✅ Deployed on Easypanel — server running at `http://0.0.0.0:80`
 
 ---
 
 ## 12. What's Left
 
 ### Immediate (SPEI Deploy)
-| Task | Priority | Blocker |
-|------|----------|---------|
-| Deploy SPEI to Easypanel | HIGH | GitHub Actions billing issue |
-| Test SPEI endpoints on live instance | HIGH | Deploy |
-| Verify CEP validation works with real data | HIGH | Deploy |
+| Task | Priority | Status |
+|------|----------|--------|
+| Deploy SPEI to Easypanel | HIGH | ✅ DONE — Running at `http://0.0.0.0:80` |
+| Test SPEI endpoints on live instance | HIGH | PENDING |
+| Verify CEP validation works with real data | HIGH | PENDING |
 
 ### Medium Term
 | Task | Priority | Notes |
