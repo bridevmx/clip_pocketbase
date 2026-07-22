@@ -49,6 +49,50 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
     throw new BadRequestError("Order must be in PENDING status to report payment");
   }
 
+  // ─── SECURITY CHECK 1: Order expiration (24h) ──────────────────────────
+  var created = new Date(order.getDate("created"));
+  var now = new Date();
+  var diffHours = (now - created) / (1000 * 60 * 60);
+  if (diffHours > 24) {
+    throw new BadRequestError("Order has expired (older than 24 hours)");
+  }
+
+  // ─── SECURITY CHECK 2: Validate declared amount ────────────────────────
+  var orderAmount = order.getFloat("amount");
+  var declared = parseFloat(montoDeclarado);
+  if (isNaN(declared) || declared <= 0) {
+    throw new BadRequestError("Invalid declared amount");
+  }
+  if (declared < orderAmount) {
+    throw new BadRequestError("Declared amount is less than order amount");
+  }
+  // Allow 10% tolerance for bank fees
+  if (declared > orderAmount * 1.1) {
+    throw new BadRequestError("Declared amount exceeds order amount");
+  }
+
+  // ─── SECURITY CHECK 3: Check for CEP reuse ─────────────────────────────
+  // Same tracking code + amount + account should not be used twice
+  var existingCep;
+  try {
+    existingCep = $app.findRecordsByFilter(
+      "cep_verifications",
+      `tracking_code="${criterio}" && amount=${declared}`,
+      "", 1, 0
+    );
+  } catch (_) {
+    existingCep = [];
+  }
+  if (existingCep && existingCep.length > 0) {
+    $app.logger().warn("[SPEI SECURITY] CEP reuse attempt", {
+      "order_id": orderId,
+      "criterio": criterio,
+      "amount": declared,
+      "existing_cep_id": existingCep[0].id,
+    });
+    throw new BadRequestError("This payment has already been reported for another order");
+  }
+
   // Get bank name for emisor
   var emisorName = "";
   try {

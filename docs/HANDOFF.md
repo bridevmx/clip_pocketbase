@@ -236,7 +236,7 @@ f39d803 feat: add refund and transaction functions to api_client, add refund fie
 - ✅ Real $1 payment + refund verified on Easypanel
 - ✅ Full README documentation
 
-### SPEI Plugin (DEPLOYED)
+### SPEI Plugin (DEPLOYED + SECURITY HARDENED)
 - ✅ 4 collections created via migrations
 - ✅ ~100 banks seeded
 - ✅ CommonJS API client with shared functions
@@ -249,15 +249,24 @@ f39d803 feat: add refund and transaction functions to api_client, add refund fie
 - ✅ Dockerfile + GitHub Actions workflow
 - ✅ README + DEPLOY guide
 - ✅ Deployed on Easypanel — server running at `http://0.0.0.0:80`
+- ✅ **Security fixes applied:**
+  - Order expiration (24h limit)
+  - Amount validation (declared >= order amount)
+  - CEP reuse prevention (tracking_code + amount unique)
+  - Stale CEP detection (max 24h old)
 
 ---
 
 ## 12. What's Left
 
-### Immediate (SPEI Deploy)
+### Immediate (SPEI Security Fixes)
 | Task | Priority | Status |
 |------|----------|--------|
 | Deploy SPEI to Easypanel | HIGH | ✅ DONE — Running at `http://0.0.0.0:80` |
+| **Security Fix #1: Order expiration (24h)** | 🔴 CRITICAL | ✅ DONE |
+| **Security Fix #2: Amount validation** | 🔴 CRITICAL | ✅ DONE |
+| **Security Fix #3: CEP reuse prevention** | 🔴 CRITICAL | ✅ DONE |
+| **Security Fix #4: Stale CEP detection** | 🔴 CRITICAL | ✅ DONE |
 | Test SPEI endpoints on live instance | HIGH | PENDING |
 | Verify CEP validation works with real data | HIGH | PENDING |
 

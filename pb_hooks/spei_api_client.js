@@ -285,6 +285,30 @@ function validate(fecha, criterio, emisor, receptor, cuenta, monto) {
   };
 }
 
+/**
+ * Parses a CEP date string "DD/MM/YYYY HH:MM:SS" to a Date object.
+ * @param {string} dateStr
+ * @returns {Date|null}
+ */
+function parseCepDate(dateStr) {
+  if (!dateStr) return null;
+  try {
+    var parts = dateStr.split(" ");
+    var dateParts = parts[0].split("/");
+    var timeParts = parts[1] ? parts[1].split(":") : ["00", "00", "00"];
+    return new Date(
+      parseInt(dateParts[2]),
+      parseInt(dateParts[1]) - 1,
+      parseInt(dateParts[0]),
+      parseInt(timeParts[0]),
+      parseInt(timeParts[1]),
+      parseInt(timeParts[2])
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
 // ─── CEP RESULT EVALUATION ────────────────────────────────────────────────
 // Shared logic for evaluating CEP validation results.
 // Used by both spei_report_payment and spei_validate_cep.
@@ -310,6 +334,23 @@ function evaluateCepResult(cepResult, declaredAmount, expectedAccount) {
   var amountMatch = Math.abs(cepAmount - declared) < 0.01;
   var accountMatch = cepAccount === expectedAccount;
   var statusMatch = cepStatus === "liquidado";
+
+  // ─── SECURITY: Validate CEP is not stale (max 24 hours old) ───────────
+  if (cepResult.processingDate) {
+    var cepDate = parseCepDate(cepResult.processingDate);
+    if (cepDate) {
+      var now = new Date();
+      var diffHours = (now - cepDate) / (1000 * 60 * 60);
+      if (diffHours > 24) {
+        return {
+          isMatch: false,
+          newStatus: "REJECTED",
+          reason: "CEP is too old (processed more than 24 hours ago)",
+          shouldRetry: false,
+        };
+      }
+    }
+  }
 
   var isExactMatch = amountMatch && accountMatch && statusMatch;
 
@@ -366,6 +407,7 @@ module.exports = {
   validate: validate,
   detectCriterioType: detectCriterioType,
   parseCepTable: parseCepTable,
+  parseCepDate: parseCepDate,
   evaluateCepResult: evaluateCepResult,
   resolveReceptorFromOrder: resolveReceptorFromOrder,
   formatCepDate: formatCepDate,
