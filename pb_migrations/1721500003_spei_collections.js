@@ -1,6 +1,7 @@
 /// <reference path="../pb_data/types.d.ts" />
 migrate((app) => {
-  // ─── spei_banks ─────────────────────────────────────────────────────────
+  // ─── Step 1: Create all collections WITHOUT relation fields ─────────────
+
   const banks = new Collection({
     type: "base",
     name: "spei_banks",
@@ -22,7 +23,6 @@ migrate((app) => {
   });
   app.save(banks);
 
-  // ─── spei_settings ──────────────────────────────────────────────────────
   const settings = new Collection({
     type: "base",
     name: "spei_settings",
@@ -48,7 +48,6 @@ migrate((app) => {
   });
   app.save(settings);
 
-  // ─── spei_orders ────────────────────────────────────────────────────────
   const orders = new Collection({
     type: "base",
     name: "spei_orders",
@@ -69,8 +68,6 @@ migrate((app) => {
         maxSelect: 1,
         values: ["PENDING", "REPORTED", "LIQUIDADO", "REJECTED", "MANUAL_REVIEW", "EXPIRED"],
       },
-      { name: "spei_settings_id", type: "text", options: { max: 50 } },
-      { name: "user_id", type: "text", options: { max: 50 } },
       { name: "criterio", type: "text", options: { max: 30 } },
       { name: "emisor", type: "text", options: { max: 10 } },
       { name: "emisor_name", type: "text", options: { max: 100 } },
@@ -91,7 +88,6 @@ migrate((app) => {
   });
   app.save(orders);
 
-  // ─── cep_verifications ──────────────────────────────────────────────────
   const cepVerifications = new Collection({
     type: "base",
     name: "cep_verifications",
@@ -101,7 +97,6 @@ migrate((app) => {
     updateRule: false,
     deleteRule: false,
     fields: [
-      { name: "order_id", type: "text", required: true },
       { name: "reference", type: "text", options: { max: 50 } },
       { name: "tracking_code", type: "text", options: { max: 50 } },
       { name: "issuing_bank", type: "text", options: { max: 200 } },
@@ -120,11 +115,48 @@ migrate((app) => {
       { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
     ],
     indexes: [
-      "CREATE INDEX idx_cep_verifications_order ON cep_verifications (order_id)",
       "CREATE INDEX idx_cep_verifications_tracking ON cep_verifications (tracking_code)",
     ],
   });
   app.save(cepVerifications);
+
+  // ─── Step 2: Add relation fields via updateCollection ───────────────────
+  // Relations need valid collectionId which is only available after save.
+
+  // Add user relation to spei_orders
+  const ordersUpdated = app.findCollectionByNameOrId("spei_orders");
+  let usersCollection = null;
+  try {
+    usersCollection = app.findCollectionByNameOrId("users");
+  } catch (_) {}
+
+  if (usersCollection) {
+    ordersUpdated.fields.add(new Field({
+      name: "user",
+      type: "relation",
+      required: false,
+      options: { collectionId: usersCollection.id, cascadeDelete: false, maxSelect: 1 },
+    }));
+  }
+
+  // Add spei_settings relation to spei_orders
+  ordersUpdated.fields.add(new Field({
+    name: "spei_settings",
+    type: "relation",
+    required: false,
+    options: { collectionId: settings.id, cascadeDelete: false, maxSelect: 1 },
+  }));
+  app.save(ordersUpdated);
+
+  // Add order relation to cep_verifications
+  const cepUpdated = app.findCollectionByNameOrId("cep_verifications");
+  cepUpdated.fields.add(new Field({
+    name: "order",
+    type: "relation",
+    required: true,
+    options: { collectionId: orders.id, cascadeDelete: false, maxSelect: 1 },
+  }));
+  app.save(cepUpdated);
 
 }, (app) => {
   try { app.delete(app.findCollectionByNameOrId("cep_verifications")); } catch (_) {}
