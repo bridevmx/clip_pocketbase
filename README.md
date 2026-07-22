@@ -465,6 +465,149 @@ El plugin también detecta pagos completados cuando el usuario regresa al link d
 
 ---
 
+# 🏦 Plugin SPEI/CEP — Transferencias Bancarias
+
+> Plugin complementario para verificar pagos SPEI/CEP vía Banxico.
+
+## ✨ ¿Qué hace este plugin?
+
+| Característica | Descripción |
+|---|---|
+| 💰 **Crear orden SPEI** | `POST /api/spei/create-order` genera una orden con datos de beneficiario |
+| 📤 **Reportar pago** | `POST /api/spei/report-payment` registra transferencia y valida CEP automáticamente |
+| 🔍 **Validar CEP** | `POST /api/spei/validate-cep` re-intenta validación (staff only) |
+| 🔄 **Reintentos automáticos** | Reintenta cada 5 min hasta 12 veces, luego escala a revisión manual |
+| 🏦 **Catálogo de bancos** | ~100 bancos mexicanos en `spei_banks` |
+
+## 🚀 Instalación
+
+Los archivos del plugin SPEI se copian junto con los de Clip:
+
+```
+tu-proyecto-pocketbase/
+├── pb_hooks/
+│   ├── spei_api_client.js           ← Cliente CEP (CommonJS)
+│   ├── spei_00_bootstrap.pb.js      ← Verificación de colecciones
+│   ├── spei_create_order.pb.js      ← POST /api/spei/create-order
+│   ├── spei_report_payment.pb.js    ← POST /api/spei/report-payment
+│   ├── spei_validate_cep.pb.js      ← POST /api/spei/validate-cep
+│   ├── spei_status_check.pb.js      ← GET /api/spei/order/{id}/status
+│   ├── spei_cep_form.pb.js          ← GET /api/spei/form
+│   └── my_app_spei_handler.pb.js    ← Tu lógica de negocio
+├── pb_migrations/
+│   ├── 1721500003_spei_collections.js
+│   └── 1721500004_spei_banks_data.js
+└── pb_public/
+    └── spei-cep-form.html           ← Formulario de reporte
+```
+
+## 🔌 API Reference
+
+### Crear orden SPEI
+
+```http
+POST /api/spei/create-order
+Content-Type: application/json
+
+{
+  "amount": 1500.00,
+  "reference_collection": "orders",
+  "reference_id": "ORD_123",
+  "concept": "Pago de servicio"
+}
+```
+
+### Reportar pago
+
+```http
+POST /api/spei/report-payment
+Content-Type: application/json
+
+{
+  "order_id": "spei_order_id",
+  "criterio": "ABC1234",
+  "emisor": "40012",
+  "monto_declarado": 1500.00
+}
+```
+
+### Validar CEP (staff only)
+
+```http
+POST /api/spei/validate-cep
+Authorization: Bearer <user-token>
+Content-Type: application/json
+
+{
+  "order_id": "spei_order_id"
+}
+```
+
+### Consultar estado
+
+```http
+GET /api/spei/order/{order_id}/status
+```
+
+## 🔄 Flujo SPEI
+
+```
+Tu App                     PocketBase                       Banxico
+   │                            │                               │
+   │  POST /api/spei/           │                               │
+   │    create-order ──────────►│                               │
+   │◄── { order_id, spei_url }──│                               │
+   │                            │                               │
+   │  Usuario realiza           │                               │
+   │  transferencia SPEI ───────┼───────────────────────────────►
+   │                            │                               │
+   │  POST /api/spei/           │                               │
+   │    report-payment ────────►│                               │
+   │                            │── GET /cep ───────────────────►│
+   │                            │◄── CEP HTML ─────────────────│
+   │                            │                               │
+   │                            │  Valida: monto, cuenta, banco │
+   │                            │  Si match → LIQUIDADO         │
+   │                            │  Si no → retry cada 5 min     │
+   │                            │  Max 12 → MANUAL_REVIEW       │
+```
+
+## 📊 Estados SPEI
+
+| Estado | Significado |
+|---|---|
+| `PENDING` | Orden creada, esperando transferencia |
+| `REPORTED` | Pago reportado, validación en curso |
+| `LIQUIDADO` | ✅ CEP validado, pago confirmado |
+| `MANUAL_REVIEW` | ⚠️ Requiere revisión manual |
+| `EXPIRED` | ⏱️ Timeout después de 24h |
+| `REJECTED` | ❌ CEP no encontrado o datos no coinciden |
+
+## 📁 Colecciones
+
+### `spei_orders` — Órdenes de transferencia
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `reference_collection` | `text` | Tu colección de referencia |
+| `reference_id` | `text` | ID de tu registro |
+| `user` | `relation` | Usuario PocketBase (opcional) |
+| `amount` | `number` | Monto en MXN |
+| `status` | `select` | Estado de la orden |
+| `criterio` | `text` | Referencia de la transferencia |
+| `emisor` | `text` | Banco emisor (código) |
+| `monto_declarado` | `text` | Monto declarado |
+
+### `spei_banks` — Catálogo de bancos
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `bank_code` | `text` | Código Banxico (ej: "40012") |
+| `bank_name` | `text` | Nombre completo |
+| `is_active` | `bool` | Banco activo |
+
+---
+
 ## 📄 Licencia
 
 MIT — úsalo libremente en tus propios proyectos.
