@@ -49,47 +49,6 @@ migrate((app) => {
   app.save(settings);
 
   // ─── spei_orders ────────────────────────────────────────────────────────
-  let usersCollectionId = null;
-  try {
-    const usersCollection = app.findCollectionByNameOrId("users");
-    usersCollectionId = usersCollection.id;
-  } catch (_) {}
-
-  const orderFields = [
-    { name: "reference_collection", type: "text", required: true },
-    { name: "reference_id", type: "text", required: true },
-    { name: "amount", type: "number", required: true },
-    { name: "currency", type: "text", required: true, options: { max: 5 } },
-    {
-      name: "status",
-      type: "select",
-      required: true,
-      maxSelect: 1,
-      values: ["PENDING", "REPORTED", "LIQUIDADO", "REJECTED", "MANUAL_REVIEW", "EXPIRED"],
-    },
-    { name: "spei_settings", type: "relation", required: false, options: { collectionId: settings.id, cascadeDelete: false, maxSelect: 1 } },
-    { name: "criterio", type: "text", options: { max: 30 } },
-    { name: "emisor", type: "text", options: { max: 10 } },
-    { name: "emisor_name", type: "text", options: { max: 100 } },
-    { name: "cuenta_beneficiaria", type: "text", options: { max: 18 } },
-    { name: "monto_declarado", type: "text", options: { max: 20 } },
-    { name: "submitted_at", type: "date" },
-    { name: "validated_at", type: "date" },
-    { name: "retry_count", type: "number", required: false },
-    { name: "next_retry_at", type: "date" },
-    { name: "created", type: "autodate", onCreate: true, onUpdate: false },
-    { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
-  ];
-
-  if (usersCollectionId) {
-    orderFields.splice(2, 0, {
-      name: "user",
-      type: "relation",
-      required: false,
-      options: { collectionId: usersCollectionId, cascadeDelete: false, maxSelect: 1 },
-    });
-  }
-
   const orders = new Collection({
     type: "base",
     name: "spei_orders",
@@ -98,7 +57,32 @@ migrate((app) => {
     createRule: "",
     updateRule: "@request.auth.collectionName = '_superusers'",
     deleteRule: "@request.auth.collectionName = '_superusers'",
-    fields: orderFields,
+    fields: [
+      { name: "reference_collection", type: "text", required: true },
+      { name: "reference_id", type: "text", required: true },
+      { name: "amount", type: "number", required: true },
+      { name: "currency", type: "text", required: true, options: { max: 5 } },
+      {
+        name: "status",
+        type: "select",
+        required: true,
+        maxSelect: 1,
+        values: ["PENDING", "REPORTED", "LIQUIDADO", "REJECTED", "MANUAL_REVIEW", "EXPIRED"],
+      },
+      { name: "spei_settings_id", type: "text", options: { max: 50 } },
+      { name: "user_id", type: "text", options: { max: 50 } },
+      { name: "criterio", type: "text", options: { max: 30 } },
+      { name: "emisor", type: "text", options: { max: 10 } },
+      { name: "emisor_name", type: "text", options: { max: 100 } },
+      { name: "cuenta_beneficiaria", type: "text", options: { max: 18 } },
+      { name: "monto_declarado", type: "text", options: { max: 20 } },
+      { name: "submitted_at", type: "date" },
+      { name: "validated_at", type: "date" },
+      { name: "retry_count", type: "number", required: false },
+      { name: "next_retry_at", type: "date" },
+      { name: "created", type: "autodate", onCreate: true, onUpdate: false },
+      { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
+    ],
     indexes: [
       "CREATE INDEX idx_spei_orders_status ON spei_orders (status)",
       "CREATE INDEX idx_spei_orders_ref ON spei_orders (reference_collection, reference_id)",
@@ -117,7 +101,7 @@ migrate((app) => {
     updateRule: false,
     deleteRule: false,
     fields: [
-      { name: "order", type: "relation", required: true, options: { collectionId: orders.id, cascadeDelete: false, maxSelect: 1 } },
+      { name: "order_id", type: "text", required: true },
       { name: "reference", type: "text", options: { max: 50 } },
       { name: "tracking_code", type: "text", options: { max: 50 } },
       { name: "issuing_bank", type: "text", options: { max: 200 } },
@@ -136,7 +120,7 @@ migrate((app) => {
       { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
     ],
     indexes: [
-      "CREATE INDEX idx_cep_verifications_order ON cep_verifications (order)",
+      "CREATE INDEX idx_cep_verifications_order ON cep_verifications (order_id)",
       "CREATE INDEX idx_cep_verifications_tracking ON cep_verifications (tracking_code)",
     ],
   });

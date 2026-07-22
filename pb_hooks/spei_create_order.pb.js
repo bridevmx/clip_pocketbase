@@ -51,14 +51,14 @@ routerAdd("POST", "/api/spei/create-order", (e) => {
     const ordersCollection = txApp.findCollectionByNameOrId("spei_orders");
     order = new Record(ordersCollection);
     if (userId) {
-      order.set("user", userId);
+      order.set("user_id", userId);
     }
     order.set("reference_collection", referenceCollection);
     order.set("reference_id", referenceId);
     order.set("amount", amount);
     order.set("currency", "MXN");
     order.set("status", "PENDING");
-    order.set("spei_settings", speiSettings.id);
+    order.set("spei_settings_id", speiSettings.id);
     order.set("cuenta_beneficiaria", speiSettings.getString("clabe"));
     txApp.save(order);
   });

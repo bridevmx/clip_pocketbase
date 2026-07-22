@@ -96,7 +96,7 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
   // Create cep_verification record
   var cepCol = $app.findCollectionByNameOrId("cep_verifications");
   var cepRec = new Record(cepCol);
-  cepRec.set("order", order.id);
+  cepRec.set("order_id", order.id);
   cepRec.set("reference", cepResult.data.reference || null);
   cepRec.set("tracking_code", cepResult.data.trackingCode || null);
   cepRec.set("issuing_bank", cepResult.data.issuingBank || null);
