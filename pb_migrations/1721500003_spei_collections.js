@@ -1,7 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 migrate((app) => {
-  // ─── Step 1: Create all collections WITHOUT relation fields ─────────────
-
+  // ─── spei_banks ─────────────────────────────────────────────────────────
   const banks = new Collection({
     type: "base",
     name: "spei_banks",
@@ -23,6 +22,7 @@ migrate((app) => {
   });
   app.save(banks);
 
+  // ─── spei_settings ──────────────────────────────────────────────────────
   const settings = new Collection({
     type: "base",
     name: "spei_settings",
@@ -48,6 +48,59 @@ migrate((app) => {
   });
   app.save(settings);
 
+  // ─── spei_orders ────────────────────────────────────────────────────────
+  // Resolve users collection ID dynamically (same pattern as Clip migration)
+  let usersCollectionId = null;
+  try {
+    const usersCollection = app.findCollectionByNameOrId("users");
+    usersCollectionId = usersCollection.id;
+  } catch (_) {}
+
+  const orderFields = [
+    { name: "reference_collection", type: "text", required: true },
+    { name: "reference_id", type: "text", required: true },
+    { name: "amount", type: "number", required: true },
+    { name: "currency", type: "text", required: true, options: { max: 5 } },
+    {
+      name: "status",
+      type: "select",
+      maxSelect: 1,
+      required: true,
+      values: ["PENDING", "REPORTED", "LIQUIDADO", "REJECTED", "MANUAL_REVIEW", "EXPIRED"],
+    },
+    { name: "criterio", type: "text", options: { max: 30 } },
+    { name: "emisor", type: "text", options: { max: 10 } },
+    { name: "emisor_name", type: "text", options: { max: 100 } },
+    { name: "cuenta_beneficiaria", type: "text", options: { max: 18 } },
+    { name: "monto_declarado", type: "text", options: { max: 20 } },
+    { name: "submitted_at", type: "date" },
+    { name: "validated_at", type: "date" },
+    { name: "retry_count", type: "number", required: false },
+    { name: "next_retry_at", type: "date" },
+    { name: "created", type: "autodate", onCreate: true, onUpdate: false },
+    { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
+  ];
+
+  // Add user relation if users collection exists
+  if (usersCollectionId) {
+    orderFields.splice(2, 0, {
+      name: "user",
+      type: "relation",
+      collectionId: usersCollectionId,
+      required: false,
+      maxSelect: 1,
+    });
+  }
+
+  // Add spei_settings relation
+  orderFields.splice(5, 0, {
+    name: "spei_settings",
+    type: "relation",
+    collectionId: settings.id,
+    required: false,
+    maxSelect: 1,
+  });
+
   const orders = new Collection({
     type: "base",
     name: "spei_orders",
@@ -56,30 +109,7 @@ migrate((app) => {
     createRule: "",
     updateRule: "@request.auth.collectionName = '_superusers'",
     deleteRule: "@request.auth.collectionName = '_superusers'",
-    fields: [
-      { name: "reference_collection", type: "text", required: true },
-      { name: "reference_id", type: "text", required: true },
-      { name: "amount", type: "number", required: true },
-      { name: "currency", type: "text", required: true, options: { max: 5 } },
-      {
-        name: "status",
-        type: "select",
-        required: true,
-        maxSelect: 1,
-        values: ["PENDING", "REPORTED", "LIQUIDADO", "REJECTED", "MANUAL_REVIEW", "EXPIRED"],
-      },
-      { name: "criterio", type: "text", options: { max: 30 } },
-      { name: "emisor", type: "text", options: { max: 10 } },
-      { name: "emisor_name", type: "text", options: { max: 100 } },
-      { name: "cuenta_beneficiaria", type: "text", options: { max: 18 } },
-      { name: "monto_declarado", type: "text", options: { max: 20 } },
-      { name: "submitted_at", type: "date" },
-      { name: "validated_at", type: "date" },
-      { name: "retry_count", type: "number", required: false },
-      { name: "next_retry_at", type: "date" },
-      { name: "created", type: "autodate", onCreate: true, onUpdate: false },
-      { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
-    ],
+    fields: orderFields,
     indexes: [
       "CREATE INDEX idx_spei_orders_status ON spei_orders (status)",
       "CREATE INDEX idx_spei_orders_ref ON spei_orders (reference_collection, reference_id)",
@@ -88,6 +118,7 @@ migrate((app) => {
   });
   app.save(orders);
 
+  // ─── cep_verifications ──────────────────────────────────────────────────
   const cepVerifications = new Collection({
     type: "base",
     name: "cep_verifications",
@@ -97,6 +128,7 @@ migrate((app) => {
     updateRule: false,
     deleteRule: false,
     fields: [
+      { name: "order", type: "relation", collectionId: orders.id, required: true, maxSelect: 1 },
       { name: "reference", type: "text", options: { max: 50 } },
       { name: "tracking_code", type: "text", options: { max: 50 } },
       { name: "issuing_bank", type: "text", options: { max: 200 } },
@@ -115,48 +147,11 @@ migrate((app) => {
       { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
     ],
     indexes: [
+      "CREATE INDEX idx_cep_verifications_order ON cep_verifications (order)",
       "CREATE INDEX idx_cep_verifications_tracking ON cep_verifications (tracking_code)",
     ],
   });
   app.save(cepVerifications);
-
-  // ─── Step 2: Add relation fields via updateCollection ───────────────────
-  // Relations need valid collectionId which is only available after save.
-
-  // Add user relation to spei_orders
-  const ordersUpdated = app.findCollectionByNameOrId("spei_orders");
-  let usersCollection = null;
-  try {
-    usersCollection = app.findCollectionByNameOrId("users");
-  } catch (_) {}
-
-  if (usersCollection) {
-    ordersUpdated.fields.add(new Field({
-      name: "user",
-      type: "relation",
-      required: false,
-      options: { collectionId: usersCollection.id, cascadeDelete: false, maxSelect: 1 },
-    }));
-  }
-
-  // Add spei_settings relation to spei_orders
-  ordersUpdated.fields.add(new Field({
-    name: "spei_settings",
-    type: "relation",
-    required: false,
-    options: { collectionId: settings.id, cascadeDelete: false, maxSelect: 1 },
-  }));
-  app.save(ordersUpdated);
-
-  // Add order relation to cep_verifications
-  const cepUpdated = app.findCollectionByNameOrId("cep_verifications");
-  cepUpdated.fields.add(new Field({
-    name: "order",
-    type: "relation",
-    required: true,
-    options: { collectionId: orders.id, cascadeDelete: false, maxSelect: 1 },
-  }));
-  app.save(cepUpdated);
 
 }, (app) => {
   try { app.delete(app.findCollectionByNameOrId("cep_verifications")); } catch (_) {}
