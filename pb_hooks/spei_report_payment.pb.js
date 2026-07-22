@@ -6,9 +6,9 @@
 // It updates the order status to REPORTED and triggers automatic CEP validation.
 //
 // Request body:
-//   order_id       (required) — The spei_orders record ID
-//   criterio       (required) — Reference (7 chars) or tracking code (8-30 chars)
-//   emisor         (required) — Issuing bank code (e.g. "40012")
+//   order_id        (required) — The spei_orders record ID
+//   criterio        (required) — Reference (7 chars) or tracking code (8-30 chars)
+//   emisor          (required) — Issuing bank code (e.g. "40012")
 //   monto_declarado (required) — Declared amount
 //
 // Response (success):
@@ -75,35 +75,17 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
   );
 
   // ─── Trigger automatic CEP validation ──────────────────────────────────
-  // Get spei_settings for receptor bank and CLABE
-  var speiSettingsId = order.getString("spei_settings");
-  var receptor = "";
-  var cuenta = order.getString("cuenta_beneficiaria");
-
-  if (speiSettingsId) {
-    try {
-      var speiSettings = $app.findRecordById("spei_settings", speiSettingsId);
-      receptor = speiSettings.getString("bank_code");
-      if (!cuenta) {
-        cuenta = speiSettings.getString("clabe");
-      }
-    } catch (_) {}
-  }
+  var receptorData = spei.resolveReceptorFromOrder($app, order);
 
   // Format date for CEP (DD-MM-YYYY)
-  var now = new Date();
-  var day = String(now.getDate()).padStart(2, "0");
-  var month = String(now.getMonth() + 1).padStart(2, "0");
-  var year = now.getFullYear();
-  var fecha = day + "-" + month + "-" + year;
+  var fecha = spei.formatCepDate(new Date());
 
   // Call CEP validation
   var cepResult;
   try {
-    cepResult = spei.validar(fecha, criterio, emisor, receptor, cuenta, String(montoDeclarado));
+    cepResult = spei.validate(fecha, criterio, emisor, receptorData.receptor, receptorData.cuenta, String(montoDeclarado));
   } catch (err) {
     $app.logger().error("[SPEI] CEP validation error", "error", err.message);
-    // Don't fail the report — mark as REPORTED and let retry handle it
     return e.json(200, {
       ok: true,
       status: "REPORTED",
@@ -128,54 +110,55 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
   cepRec.set("raw_response", cepResult.data);
   $app.save(cepRec);
 
-  // ─── Evaluate CEP result ───────────────────────────────────────────────
-  if (!cepResult.data.found) {
-    // CEP not found — schedule retry
-    order.set("retry_count", (order.getInt("retry_count") || 0) + 1);
-    order.set("next_retry_at", new Date(now.getTime() + 5 * 60 * 1000).toISOString());
-    cepRec.set("validated_match", false);
-    cepRec.set("mismatch_reason", "CEP not found: " + (cepResult.data.message || "unknown"));
-    $app.save(cepRec);
+  // ─── Evaluate CEP result using shared logic ────────────────────────────
+  var evaluation = spei.evaluateCepResult(cepResult.data, String(montoDeclarado), receptorData.cuenta);
+
+  if (evaluation.shouldRetry) {
+    // Schedule retry
+    var retryCount = (order.getInt("retry_count") || 0) + 1;
+    order.set("retry_count", retryCount);
+
+    if (retryCount >= 12) {
+      // Too many retries — escalate to manual review
+      order.set("status", "MANUAL_REVIEW");
+      order.set("validated_at", new Date().toISOString());
+      $app.save(order);
+
+      cepRec.set("validated_match", false);
+      cepRec.set("mismatch_reason", "Maximum retries reached");
+      $app.save(cepRec);
+
+      return e.json(200, {
+        ok: true,
+        status: "MANUAL_REVIEW",
+        message: "Transfer still in process after multiple retries. Escalated to manual review.",
+      });
+    }
+
+    // Schedule next retry (5 minutes)
+    order.set("next_retry_at", new Date(Date.now() + 5 * 60 * 1000).toISOString());
     $app.save(order);
 
     return e.json(200, {
       ok: true,
       status: "REPORTED",
-      message: "Payment reported. CEP not found yet — will retry in 5 minutes.",
+      message: "Transfer in process. Will retry in 5 minutes (attempt " + retryCount + "/12).",
     });
   }
 
-  // CEP found — validate match
-  var cepAmount = parseFloat(cepResult.data.amount) || 0;
-  var declaredAmount = parseFloat(montoDeclarado) || 0;
-  var cepAccount = cepResult.data.beneficiaryAccount || "";
-  var expectedAccount = cuenta;
-  var cepStatus = (cepResult.data.status || "").toLowerCase();
+  // Update order based on evaluation result
+  order.set("validated_at", new Date().toISOString());
+  order.set("status", evaluation.newStatus);
+  order.set("next_retry_at", null);
+  $app.save(order);
 
-  var amountMatch = Math.abs(cepAmount - declaredAmount) < 0.01;
-  var accountMatch = cepAccount === expectedAccount;
-  var statusMatch = cepStatus === "liquidado";
-
-  var isExactMatch = amountMatch && accountMatch && statusMatch;
-  cepRec.set("validated_match", isExactMatch);
-
-  if (!isExactMatch) {
-    var reasons = [];
-    if (!amountMatch) reasons.push("amount mismatch");
-    if (!accountMatch) reasons.push("account mismatch");
-    if (!statusMatch) reasons.push("status not liquidado");
-    cepRec.set("mismatch_reason", reasons.join(", "));
+  cepRec.set("validated_match", evaluation.isMatch);
+  if (!evaluation.isMatch) {
+    cepRec.set("mismatch_reason", evaluation.reason);
   }
-
   $app.save(cepRec);
 
-  // Update order based on result
-  order.set("validated_at", new Date().toISOString());
-
-  if (isExactMatch) {
-    order.set("status", "LIQUIDADO");
-    $app.save(order);
-
+  if (evaluation.isMatch) {
     $app.logger().info("[SPEI] Order LIQUIDADO", "order_id", orderId);
 
     return e.json(200, {
@@ -183,44 +166,11 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
       status: "LIQUIDADO",
       message: "CEP validated successfully. Payment confirmed.",
     });
-  } else {
-    // Mismatch — check if status is "en proceso" for retry
-    if (cepStatus.indexOf("en proceso") !== -1) {
-      // Schedule retry
-      var retryCount = (order.getInt("retry_count") || 0) + 1;
-      order.set("retry_count", retryCount);
-
-      if (retryCount >= 12) {
-        // Too many retries — escalate to manual review
-        order.set("status", "MANUAL_REVIEW");
-        $app.save(order);
-
-        return e.json(200, {
-          ok: true,
-          status: "MANUAL_REVIEW",
-          message: "Transfer is still in process after multiple retries. Escalated to manual review.",
-        });
-      }
-
-      // Schedule next retry (5 minutes)
-      order.set("next_retry_at", new Date(now.getTime() + 5 * 60 * 1000).toISOString());
-      $app.save(order);
-
-      return e.json(200, {
-        ok: true,
-        status: "REPORTED",
-        message: "Transfer in process. Will retry in 5 minutes (attempt " + retryCount + "/12).",
-      });
-    }
-
-    // Other mismatch — reject
-    order.set("status", "REJECTED");
-    $app.save(order);
-
-    return e.json(200, {
-      ok: true,
-      status: "REJECTED",
-      message: "CEP validation failed: " + (cepRec.getString("mismatch_reason") || "values do not match"),
-    });
   }
+
+  return e.json(200, {
+    ok: true,
+    status: evaluation.newStatus,
+    message: "CEP validation failed: " + evaluation.reason,
+  });
 });

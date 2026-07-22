@@ -4,7 +4,7 @@
 //
 // Usage in any pb_hooks/*.pb.js file:
 //   const spei = require(`${__hooks}/spei_api_client.js`);
-//   const result = spei.validar(fecha, criterio, emisor, receptor, cuenta, monto);
+//   const result = spei.validate(fecha, criterio, emisor, receptor, cuenta, monto);
 //
 // This module scrapes Banxico's CEP validation page.
 // Banxico does not provide a public API, so we parse the HTML response.
@@ -22,12 +22,20 @@ var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────
 
-function textoPlano(v) {
+function safeTrim(v) {
   if (v === undefined || v === null) return "";
   return String(v).trim();
 }
 
-function decodificarEntidades(s) {
+function stripAccents(s) {
+  return s
+    .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i")
+    .replace(/ó/g, "o").replace(/ú/g, "u").replace(/ñ/g, "n")
+    .replace(/Á/g, "A").replace(/É/g, "E").replace(/Í/g, "I")
+    .replace(/Ó/g, "O").replace(/Ú/g, "U").replace(/Ñ/g, "N");
+}
+
+function decodeEntities(s) {
   return s
     .replace(/&aacute;/g, "a").replace(/&eacute;/g, "e")
     .replace(/&iacute;/g, "i").replace(/&oacute;/g, "o")
@@ -39,18 +47,22 @@ function decodificarEntidades(s) {
     .replace(/&euml;/g, "e").replace(/&uuml;/g, "u");
 }
 
-function limpiarHtml(s) {
-  return textoPlano(
-    decodificarEntidades(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+function cleanHtml(s) {
+  return safeTrim(
+    decodeEntities(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
   );
 }
 
-function quitarAcentos(s) {
-  return s
-    .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i")
-    .replace(/ó/g, "o").replace(/ú/g, "u").replace(/ñ/g, "n")
-    .replace(/Á/g, "A").replace(/É/g, "E").replace(/Í/g, "I")
-    .replace(/Ó/g, "O").replace(/Ú/g, "U").replace(/Ñ/g, "N");
+/**
+ * Formats a Date object to DD-MM-YYYY for CEP validation.
+ * @param {Date} date
+ * @returns {string}
+ */
+function formatCepDate(date) {
+  var day = String(date.getDate()).padStart(2, "0");
+  var month = String(date.getMonth() + 1).padStart(2, "0");
+  var year = date.getFullYear();
+  return day + "-" + month + "-" + year;
 }
 
 // ─── CEP HTML PARSER ──────────────────────────────────────────────────────
@@ -72,10 +84,10 @@ function parseCepTable(html) {
   var re = /<tr[^>]*>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/g;
   var m;
   while ((m = re.exec(html)) !== null) {
-    var label = quitarAcentos(
-      decodificarEntidades(m[1].replace(/<[^>]+>/g, ""))
+    var label = stripAccents(
+      decodeEntities(m[1].replace(/<[^>]+>/g, ""))
     ).toLowerCase().trim();
-    var value = textoPlano(decodificarEntidades(m[2].replace(/<[^>]+>/g, "")));
+    var value = safeTrim(decodeEntities(m[2].replace(/<[^>]+>/g, "")));
     if (fieldMap[label]) data[fieldMap[label]] = value;
   }
   return data;
@@ -90,8 +102,8 @@ function parseStatusDescription(html, id) {
   var m = re.exec(html);
   if (m) {
     return {
-      statusName: limpiarHtml(m[1]),
-      statusDescription: limpiarHtml(m[2]),
+      statusName: cleanHtml(m[1]),
+      statusDescription: cleanHtml(m[2]),
     };
   }
   return null;
@@ -124,8 +136,7 @@ function detectCriterioType(criterio) {
  * @param {string} monto    - Amount (e.g. "100.00")
  * @returns {{ data: object, statusCode: number }}
  */
-function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
-  // Detect criteria type
+function validate(fecha, criterio, emisor, receptor, cuenta, monto) {
   var tipoCriterio = detectCriterioType(criterio);
   if (!tipoCriterio) {
     return {
@@ -209,12 +220,10 @@ function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
 
   var html = resPost.raw || "";
 
-  // If response is JSON, return it directly
   if (resPost.json !== undefined && resPost.json !== null) {
     return { data: { found: false, raw: resPost.json }, statusCode: resPost.statusCode };
   }
 
-  // Parse HTML response
   var datos = parseCepTable(html);
   var found = !!datos.status;
 
@@ -222,7 +231,7 @@ function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
     var mensaje = "Operacion no encontrada.";
     var mInfo = /<div[^>]*class="info"[^>]*>[\s\S]*?<strong>([\s\S]*?)<\/strong>/i.exec(html);
     if (mInfo) {
-      mensaje = limpiarHtml(mInfo[1]);
+      mensaje = cleanHtml(mInfo[1]);
     }
     return {
       data: { found: false, message: mensaje },
@@ -230,7 +239,6 @@ function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
     };
   }
 
-  // Map status to description ID
   var statusMap = {
     "en proceso":                "desc_EnProceso",
     "liquidado":                 "desc_Liquidado",
@@ -246,7 +254,7 @@ function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
   var statusName = null;
   var statusDescription = null;
   if (datos.status) {
-    var clave = quitarAcentos(datos.status).toLowerCase().trim();
+    var clave = stripAccents(datos.status).toLowerCase().trim();
     var idEstado = statusMap[clave];
     var sv = parseStatusDescription(html, idEstado);
     if (sv) {
@@ -277,10 +285,88 @@ function validar(fecha, criterio, emisor, receptor, cuenta, monto) {
   };
 }
 
+// ─── CEP RESULT EVALUATION ────────────────────────────────────────────────
+// Shared logic for evaluating CEP validation results.
+// Used by both spei_report_payment and spei_validate_cep.
+
+/**
+ * Evaluates a CEP validation result against expected values.
+ *
+ * @param {object} cepResult     - The CEP validation result data
+ * @param {string} declaredAmount - The declared amount as string
+ * @param {string} expectedAccount - The expected beneficiary CLABE
+ * @returns {{ isMatch: boolean, newStatus: string, reason: string|null, shouldRetry: boolean }}
+ */
+function evaluateCepResult(cepResult, declaredAmount, expectedAccount) {
+  if (!cepResult.found) {
+    return { isMatch: false, newStatus: null, reason: "CEP not found", shouldRetry: true };
+  }
+
+  var cepAmount = parseFloat(cepResult.amount) || 0;
+  var declared = parseFloat(declaredAmount) || 0;
+  var cepAccount = cepResult.beneficiaryAccount || "";
+  var cepStatus = (cepResult.status || "").toLowerCase();
+
+  var amountMatch = Math.abs(cepAmount - declared) < 0.01;
+  var accountMatch = cepAccount === expectedAccount;
+  var statusMatch = cepStatus === "liquidado";
+
+  var isExactMatch = amountMatch && accountMatch && statusMatch;
+
+  if (isExactMatch) {
+    return { isMatch: true, newStatus: "LIQUIDADO", reason: null, shouldRetry: false };
+  }
+
+  // Build mismatch reason
+  var reasons = [];
+  if (!amountMatch) reasons.push("amount mismatch");
+  if (!accountMatch) reasons.push("account mismatch");
+  if (!statusMatch) reasons.push("status not liquidado");
+  var reason = reasons.join(", ");
+
+  // Check if retry is possible (transfer in process)
+  if (cepStatus.indexOf("en proceso") !== -1) {
+    return { isMatch: false, newStatus: null, reason: reason, shouldRetry: true };
+  }
+
+  // Other status — reject
+  return { isMatch: false, newStatus: "REJECTED", reason: reason, shouldRetry: false };
+}
+
+// ─── ORDER RESOLVER ───────────────────────────────────────────────────────
+
+/**
+ * Resolves the receptor bank code and CLABE from an order's spei_settings.
+ *
+ * @param {object} app    - PocketBase app instance ($app)
+ * @param {object} order  - The spei_orders record
+ * @returns {{ receptor: string, cuenta: string }}
+ */
+function resolveReceptorFromOrder(app, order) {
+  var receptor = "";
+  var cuenta = order.getString("cuenta_beneficiaria");
+
+  var speiSettingsId = order.getString("spei_settings");
+  if (speiSettingsId) {
+    try {
+      var speiSettings = app.findRecordById("spei_settings", speiSettingsId);
+      receptor = speiSettings.getString("bank_code");
+      if (!cuenta) {
+        cuenta = speiSettings.getString("clabe");
+      }
+    } catch (_) {}
+  }
+
+  return { receptor: receptor, cuenta: cuenta };
+}
+
 // ─── EXPORTS ──────────────────────────────────────────────────────────────
 
 module.exports = {
-  validar: validar,
+  validate: validate,
   detectCriterioType: detectCriterioType,
   parseCepTable: parseCepTable,
+  evaluateCepResult: evaluateCepResult,
+  resolveReceptorFromOrder: resolveReceptorFromOrder,
+  formatCepDate: formatCepDate,
 };
