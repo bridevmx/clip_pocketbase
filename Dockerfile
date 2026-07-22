@@ -1,4 +1,4 @@
-FROM ghcr.io/pocketbase/pocketbase:v0.25.8
+FROM ghcr.io/pocketbase/pocketbase:v0.39.8
 
 # Copy plugin files
 COPY pb_hooks/ /pb/pb_hooks/
