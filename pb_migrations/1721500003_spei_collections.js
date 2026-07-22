@@ -1,7 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 migrate((app) => {
   // ─── spei_banks ─────────────────────────────────────────────────────────
-  // Catalog of Mexican banks for SPEI transfers.
   const banks = new Collection({
     type: "base",
     name: "spei_banks",
@@ -24,7 +23,6 @@ migrate((app) => {
   app.save(banks);
 
   // ─── spei_settings ──────────────────────────────────────────────────────
-  // Beneficiary accounts where SPEI payments are received.
   const settings = new Collection({
     type: "base",
     name: "spei_settings",
@@ -51,7 +49,6 @@ migrate((app) => {
   app.save(settings);
 
   // ─── spei_orders ────────────────────────────────────────────────────────
-  // SPEI payment orders, independent from Clip orders.
   let usersCollectionId = null;
   try {
     const usersCollection = app.findCollectionByNameOrId("users");
@@ -88,9 +85,8 @@ migrate((app) => {
     orderFields.splice(2, 0, {
       name: "user",
       type: "relation",
-      collectionId: usersCollectionId,
       required: false,
-      maxSelect: 1,
+      options: { collectionId: usersCollectionId, cascadeDelete: false, maxSelect: 1 },
     });
   }
 
@@ -105,7 +101,6 @@ migrate((app) => {
     fields: orderFields,
     indexes: [
       "CREATE INDEX idx_spei_orders_status ON spei_orders (status)",
-      "CREATE INDEX idx_spei_orders_user ON spei_orders (user)",
       "CREATE INDEX idx_spei_orders_ref ON spei_orders (reference_collection, reference_id)",
       "CREATE INDEX idx_spei_orders_retry ON spei_orders (next_retry_at, retry_count)",
     ],
@@ -113,7 +108,6 @@ migrate((app) => {
   app.save(orders);
 
   // ─── cep_verifications ──────────────────────────────────────────────────
-  // Audit trail for CEP validation results.
   const cepVerifications = new Collection({
     type: "base",
     name: "cep_verifications",
@@ -137,7 +131,7 @@ migrate((app) => {
       { name: "validated_match", type: "bool" },
       { name: "mismatch_reason", type: "text", options: { max: 500 } },
       { name: "raw_response", type: "json" },
-      { name: "validated_by", type: "relation", required: false, options: { collectionId: usersCollectionId || "", cascadeDelete: false, maxSelect: 1 } },
+      { name: "validated_by", type: "text", options: { max: 100 } },
       { name: "created", type: "autodate", onCreate: true, onUpdate: false },
       { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
     ],
