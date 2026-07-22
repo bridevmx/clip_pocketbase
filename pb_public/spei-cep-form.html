@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reportar Pago SPEI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 24px; font-size: 1.5rem; color: #1a1a2e; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #555; }
+    input, select { padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; transition: border-color 0.2s; }
+    input:focus, select:focus { outline: none; border-color: #1a1a2e; }
+    .hint { font-size: 0.75rem; color: #888; margin-top: 4px; min-height: 18px; }
+    .hint.folio { color: #155724; }
+    .hint.clave { color: #0c5460; }
+    .hint.invalid { color: #721c24; }
+    button { grid-column: 1 / -1; padding: 12px; background: #1a1a2e; color: #fff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #16213e; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    .results { display: none; }
+    .results.visible { display: block; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+    th { background: #f8f8f8; font-weight: 600; color: #555; width: 40%; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+    .badge.ok { background: #d4edda; color: #155724; }
+    .badge.pending { background: #fff3cd; color: #856404; }
+    .badge.error { background: #f8d7da; color: #721c24; }
+    .status-box { margin-top: 16px; padding: 14px; border-radius: 6px; background: #f0f7ff; border-left: 4px solid #1a1a2e; }
+    .status-box h3 { font-size: 0.95rem; margin-bottom: 6px; color: #1a1a2e; }
+    .status-box p { font-size: 0.85rem; line-height: 1.5; color: #555; }
+    .msg-error { padding: 14px; border-radius: 6px; background: #fff3cd; border-left: 4px solid #ffc107; color: #856404; font-size: 0.9rem; line-height: 1.5; }
+    .msg-success { padding: 14px; border-radius: 6px; background: #d4edda; border-left: 4px solid #28a745; color: #155724; font-size: 0.9rem; line-height: 1.5; }
+    .loading { text-align: center; padding: 20px; color: #888; font-size: 0.9rem; }
+    .loading::after { content: ""; display: inline-block; width: 18px; height: 18px; border: 2px solid #ccc; border-top-color: #1a1a2e; border-radius: 50%; animation: spin 0.6s linear infinite; margin-left: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 500px) { .form-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Reportar Pago SPEI</h1>
+
+    <div class="card" id="bankInfo" style="display:none;">
+      <h2>Datos de transferencia</h2>
+      <table>
+        <tr><th>CLABE</th><td id="infoClabe">-</td></tr>
+        <tr><th>Banco</th><td id="infoBank">-</td></tr>
+        <tr><th>Titular</th><td id="infoHolder">-</td></tr>
+        <tr><th>Monto</th><td id="infoAmount">-</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Datos del pago</h2>
+      <form id="cepForm" class="form-grid">
+        <div class="form-group full">
+          <label for="criterio">Referencia o Clave de Rastreo</label>
+          <input type="text" id="criterio" placeholder="7 caracteres o de 8 a 30 caracteres" required>
+          <div id="criterioHint" class="hint">Ingresa folio (7 caracteres) o clave de rastreo (de 8 a 30 caracteres)</div>
+        </div>
+        <div class="form-group">
+          <label for="emisor">Banco emisor</label>
+          <select id="emisor" required>
+            <option value="">-- Seleccionar --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="monto">Monto</label>
+          <input type="number" id="monto" step="0.01" min="0.01" placeholder="0.00" required>
+        </div>
+        <button type="submit" id="btnSubmit">Reportar Pago</button>
+      </form>
+    </div>
+
+    <div id="loading" class="loading" style="display:none;">Validando con Banxico...</div>
+
+    <div id="results" class="results card">
+      <h2>Resultado</h2>
+      <div id="resultContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // =====================================================================
+    // CONFIGURATION — Set these via PocketBase environment or edit directly
+    // =====================================================================
+    var PB_URL = window.PocketBase_URL || window.location.origin;
+    var ORDER_ID = "";
+    var SPEI_SETTINGS_ID = "";
+    var EXPECTED_AMOUNT = 0;
+
+    // =====================================================================
+    // BANKS DATA — Loaded from spei_banks collection
+    // =====================================================================
+    var banks = [];
+
+    function loadBanks() {
+      fetch(PB_URL + "/api/collections/spei_banks/records?filter=(is_active=true)&pageSize=200")
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          banks = d.items || [];
+          poblarSelects();
+        })
+        .catch(function() {
+          // Fallback to hardcoded banks if collection not available
+          banks = [
+            {bank_code: "40002", bank_name: "BANAMEX"},
+            {bank_code: "40012", bank_name: "BBVA MEXICO"},
+            {bank_code: "40014", bank_name: "SANTANDER"},
+            {bank_code: "40021", bank_name: "HSBC"},
+            {bank_code: "40042", bank_name: "MIFEL"},
+            {bank_code: "40044", bank_name: "SCOTIABANK"},
+            {bank_code: "40058", bank_name: "BANREGIO"},
+            {bank_code: "40060", bank_name: "BANSI"},
+            {bank_code: "40062", bank_name: "AFIRME"},
+            {bank_code: "40072", bank_name: "BANORTE"},
+            {bank_code: "40127", bank_name: "AZTECA"},
+            {bank_code: "40128", bank_name: "KAPITAL"},
+            {bank_code: "40130", bank_name: "COMPARTAMOS"},
+            {bank_code: "40132", bank_name: "MULTIVA BANCO"},
+            {bank_code: "40137", bank_name: "BANCOPPEL"},
+            {bank_code: "40138", bank_name: "UALA"},
+            {bank_code: "40140", bank_name: "CONSUBANCO"},
+            {bank_code: "40141", bank_name: "VOLKSWAGEN"},
+            {bank_code: "40145", bank_name: "BBASE"},
+            {bank_code: "40148", bank_name: "PAGATODO"},
+            {bank_code: "40150", bank_name: "INMOBILIARIO"},
+            {bank_code: "40151", bank_name: "DONDE"},
+            {bank_code: "40152", bank_name: "BANCREA"},
+            {bank_code: "40154", bank_name: "BANCO COVALTO"},
+            {bank_code: "40155", bank_name: "ICBC"},
+            {bank_code: "40156", bank_name: "SABADELL"},
+            {bank_code: "40157", bank_name: "SHINHAN"},
+            {bank_code: "40158", bank_name: "MIZUHO BANK"},
+            {bank_code: "40159", bank_name: "BANK OF CHINA"},
+            {bank_code: "40160", bank_name: "BANCO S3"},
+            {bank_code: "40167", bank_name: "HEY BANCO"},
+            {bank_code: "90638", bank_name: "NU MEXICO"},
+            {bank_code: "90661", bank_name: "KLAR"},
+            {bank_code: "90720", bank_name: "MEXPAGO"},
+            {bank_code: "90722", bank_name: "MERCADO PAGO W"},
+            {bank_code: "90730", bank_name: "CLIP"},
+            {bank_code: "90732", bank_name: "PEIBO"},
+            {bank_code: "90734", bank_name: "FINCO PAY"},
+            {bank_code: "90738", bank_name: "FINTOC"},
+          ];
+          poblarSelects();
+        });
+    }
+
+    function poblarSelects() {
+      var sel = document.getElementById("emisor");
+      // Clear existing options except first
+      while (sel.options.length > 1) { sel.remove(1); }
+      for (var i = 0; i < banks.length; i++) {
+        var opt = document.createElement("option");
+        opt.value = banks[i].bank_code;
+        opt.textContent = banks[i].bank_name;
+        sel.appendChild(opt);
+      }
+    }
+
+    function detectarCriterio(valor) {
+      var hint = document.getElementById("criterioHint");
+      var longitud = valor.length;
+
+      if (valor === "") {
+        hint.textContent = "Ingresa folio (7 caracteres) o clave de rastreo (de 8 a 30 caracteres)";
+        hint.className = "hint";
+        return null;
+      }
+
+      if (longitud > 30) {
+        hint.textContent = "El texto no puede ser mayor a 30 caracteres (actual: " + longitud + ")";
+        hint.className = "hint invalid";
+        return null;
+      }
+
+      if (longitud === 7) {
+        hint.textContent = "Folio de referencia (tipoCriterio: R)";
+        hint.className = "hint folio";
+        return "R";
+      }
+
+      if (longitud > 7 && longitud <= 30) {
+        hint.textContent = "Clave de rastreo (tipoCriterio: T)";
+        hint.className = "hint clave";
+        return "T";
+      }
+
+      hint.textContent = "El criterio debe ser de 7 caracteres o de 8 a 30 caracteres (actual: " + longitud + ")";
+      hint.className = "hint invalid";
+      return null;
+    }
+
+    document.getElementById("criterio").addEventListener("input", function () {
+      detectarCriterio(this.value.trim());
+    });
+
+    function esc(s) {
+      if (!s) return "-";
+      var div = document.createElement("div");
+      div.appendChild(document.createTextNode(s));
+      return div.innerHTML;
+    }
+
+    function renderResult(d) {
+      if (d.status === "LIQUIDADO") {
+        return '<div class="msg-success"><strong>Pago confirmado!</strong><br>' + esc(d.message) + '</div>';
+      }
+      if (d.status === "REPORTED") {
+        return '<div class="msg-error"><strong>Pago reportado</strong><br>' + esc(d.message) + '</div>';
+      }
+      if (d.status === "REJECTED") {
+        return '<div class="msg-error"><strong>Pago rechazado</strong><br>' + esc(d.message) + '</div>';
+      }
+      if (d.status === "MANUAL_REVIEW") {
+        return '<div class="msg-error"><strong>Revisión manual requerida</strong><br>' + esc(d.message) + '</div>';
+      }
+      return '<div class="msg-error">' + esc(d.message || "Error desconocido") + '</div>';
+    }
+
+    document.getElementById("cepForm").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var btn = document.getElementById("btnSubmit");
+      var loading = document.getElementById("loading");
+      var results = document.getElementById("results");
+      var content = document.getElementById("resultContent");
+
+      var criterioVal = document.getElementById("criterio").value.trim();
+      if (!detectarCriterio(criterioVal)) {
+        document.getElementById("criterio").focus();
+        return;
+      }
+
+      btn.disabled = true;
+      loading.style.display = "block";
+      results.classList.remove("visible");
+      content.innerHTML = "";
+
+      var payload = {
+        order_id: ORDER_ID,
+        criterio: criterioVal,
+        emisor: document.getElementById("emisor").value,
+        monto_declarado: parseFloat(document.getElementById("monto").value),
+      };
+
+      fetch(PB_URL + "/api/spei/report-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          loading.style.display = "none";
+          results.classList.add("visible");
+          content.innerHTML = renderResult(d);
+        })
+        .catch(function (err) {
+          loading.style.display = "none";
+          results.classList.add("visible");
+          content.innerHTML = '<div class="msg-error">Error de conexion: ' + esc(err.message) + '</div>';
+        })
+        .finally(function () {
+          btn.disabled = false;
+        });
+    });
+
+    // =====================================================================
+    // INIT — Parse URL params and load data
+    // =====================================================================
+    function init() {
+      var params = new URLSearchParams(window.location.search);
+      ORDER_ID = params.get("order_id") || "";
+      SPEI_SETTINGS_ID = params.get("spei_settings_id") || "";
+      EXPECTED_AMOUNT = parseFloat(params.get("amount")) || 0;
+
+      if (!ORDER_ID) {
+        document.getElementById("cepForm").innerHTML = '<div class="msg-error">No order ID provided. Please start from the payment page.</div>';
+        return;
+      }
+
+      // Load spei_settings to show bank info
+      if (SPEI_SETTINGS_ID) {
+        fetch(PB_URL + "/api/collections/spei_settings/records/" + SPEI_SETTINGS_ID)
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            document.getElementById("infoClabe").textContent = d.clabe || "-";
+            document.getElementById("infoBank").textContent = d.bank_name || "-";
+            document.getElementById("infoHolder").textContent = d.account_holder || "-";
+            document.getElementById("infoAmount").textContent = "$" + (EXPECTED_AMOUNT || "-");
+            document.getElementById("bankInfo").style.display = "block";
+          })
+          .catch(function() {});
+      }
+
+      if (EXPECTED_AMOUNT > 0) {
+        document.getElementById("monto").value = EXPECTED_AMOUNT;
+      }
+
+      loadBanks();
+    }
+
+    init();
+  </script>
+</body>
+</html>
