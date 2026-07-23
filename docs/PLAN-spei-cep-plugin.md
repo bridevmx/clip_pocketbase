@@ -99,17 +99,24 @@ MANUAL_REVIEW  → Requiere intervención humana
 EXPIRED        → Tiempo de validación agotado
 ```
 
-**Flujo de estados:**
+**Validaciones de seguridad en `POST /api/spei/report-payment`:**
+1. Orden no debe haber expirado (> 24h desde `created`)
+2. `monto_declarado` debe ser >= `amount` de la orden
+3. `monto_declarado` no debe exceder `amount * 1.1` (10% tolerancia)
+4. `tracking_code` + `amount` no debe existir en otra `cep_verifications`
+5. Fecha de procesamiento del CEP debe ser < 24h
+
+**Flujo de estados (con validaciones):**
 ```
-PENDING ──report──→ REPORTED ──validar──→ LIQUIDADO (match exacto)
+PENDING ──report──→ REPORTED ──validar──→ LIQUIDADO (match exacto + CEP < 24h)
                               │
-                              ├──→ REJECTED (no coincide)
+                              ├──→ REJECTED (no coincide / CEP muy viejo)
                               │
                               └──→ PENDING (en proceso, reintentar)
                                     │
                                     └──→ MANUAL_REVIEW (después de 12 intentos)
                                           │
-                                          └──→ EXPIRED (después de 24h)
+                                          └──→ EXPIRED (después de 24h desde created)
 ```
 
 **Reglas de acceso:**
@@ -351,25 +358,36 @@ Inserta los ~100 bancos del catálogo Banxico.
 
 ---
 
-## Flujo de Datos Completo
+## Flujo de Datos Completo SPEI (con validaciones de seguridad)
 
-### Flujo Tarjeta (Clip) — ya implementado
-```
-1. Usuario crea pedido → POST /api/clip/create-link
-2. Clip genera link → payment_url
-3. Usuario paga con tarjeta
-4. Clip envía webhook → POST /api/clip/webhook
-5. Plugin valida con Clip API → status COMPLETED
-6. Handler ejecuta business logic
-```
-
-### Flujo SPEI — nuevo plugin
 ```
 1. Usuario crea pedido → POST /api/spei/create-order
 2. Plugin retorna datos de cuenta → CLABE, banco, titular
 3. Usuario hace transferencia desde su banco
 4. Usuario reporta pago → POST /api/spei/report-payment
-5. Plugin valida CEP automáticamente → status LIQUIDADO
+   │
+   ├── VALIDACIÓN #1: ¿Orden expiró (>24h desde created)?
+   │   └── Sí → 400 Order has expired
+   │
+   ├── VALIDACIÓN #2: ¿Monto declarado >= monto orden?
+   │   └── No → 400 Declared amount < order amount
+   │
+   ├── VALIDACIÓN #3: ¿Monto declarado > monto orden * 1.1?
+   │   └── Sí → 400 Declared amount exceeds order amount
+   │
+   ├── VALIDACIÓN #4: ¿Tracking code + amount ya usado en otra orden?
+   │   └── Sí → 400 Payment already reported
+   │
+   └── Continuar con validación CEP...
+         │
+         ├── VALIDACIÓN #5: ¿CEP tiene < 24h desde processingDate?
+         │   └── No → REJECTED (CEP too old)
+         │
+         └── Evaluar match (amount + account + status)
+               ├── Match exacto → LIQUIDADO
+               ├── En proceso → retry 5min (max 12)
+               └── No match → REJECTED
+
 6. Handler ejecuta business logic
 ```
 
@@ -402,10 +420,13 @@ onRecordAfterUpdateSuccess((e) => {
 
 ## Próximos Pasos
 
-1. **Crear migraciones** — spei_collections.js, spei_banks_data.js
-2. **Crear API client** — spei_api_client.js
-3. **Crear hooks** — spei_create_order, spei_report_payment, spei_validate_cep
-4. **Crear formulario HTML** — spei-cep-form.html
-5. **Crear handler de ejemplo** — my_app_spei_handler.pb.js
-6. **Tests E2E** — script test-spei.js
-7. **Documentación** — README actualizado
+1. ~~**Crear migraciones** — spei_collections.js, spei_banks_data.js~~ ✅
+2. ~~**Crear API client** — spei_api_client.js~~ ✅
+3. ~~**Crear hooks** — spei_create_order, spei_report_payment, spei_validate_cep~~ ✅
+4. ~~**Crear formulario HTML** — spei-cep-form.html~~ ✅
+5. ~~**Crear handler de ejemplo** — my_app_spei_handler.pb.js~~ ✅
+6. ~~**Validaciones de seguridad** — 4 validaciones críticas implementadas~~ ✅
+7. ~~**Deploy** — Easypanel, server running~~ ✅
+8. **Tests E2E** — script test-spei.js (pendiente)
+9. **Update README** — documentar plugin SPEI en README principal
+10. **EXPIRED transition** — TTL automático para MANUAL_REVIEW

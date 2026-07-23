@@ -608,6 +608,26 @@ Tu App                     PocketBase                       Banxico
 
 ---
 
+## 🔒 Seguridad SPEI
+
+El plugin implementa **5 validaciones de seguridad** en `POST /api/spei/report-payment` para prevenir fraude:
+
+| # | Validación | ¿Qué previene? |
+|---|------------|----------------|
+| 1 | **Expiración de orden** (> 24h desde created) | Reportar pagos en órdenes vencidas |
+| 2 | **Monto declarado >= monto orden** | Infrapago deliberado |
+| 3 | **Monto declarado <= monto orden × 1.1** | Sobrepago no autorizado |
+| 4 | **Tracking code + amount único** | Reutilizar el mismo CEP en múltiples órdenes |
+| 5 | **CEP < 24h de antigüedad** | Usar comprobantes de transferencias antiguas |
+
+### Análisis de vulnerabilidades
+
+Para un análisis completo de los 10 vectores de ataque identificados y su estado, ver:
+- `docs/SECURITY-spei-analysis.md` — Análisis detallado
+- `docs/adr/0005-spei-security-validations.md` — Decisiones arquitectónicas de seguridad
+
+---
+
 ## 📄 Licencia
 
 MIT — úsalo libremente en tus propios proyectos.
