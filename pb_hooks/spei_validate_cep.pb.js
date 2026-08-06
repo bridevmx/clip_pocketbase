@@ -1,10 +1,17 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// POST /api/spei/validate-cep — Validate a SPEI order against Banxico CEP.
+// POST /api/spei/validate-cep — Force re-validation of a SPEI order vs Banxico CEP.
 //
-// This endpoint is called automatically by the retry mechanism.
-// It can also be called manually by staff to force re-validation.
-// Requires authentication.
+// Normally called automatically by the cron job (spei_cron_retry.pb.js).
+// Can also be called manually to force an immediate re-check without waiting
+// for the next cron cycle.
+//
+// Authentication: REQUIRED — 3-level access model:
+//   Level 1: No auth           → 401 Unauthorized
+//   Level 2: Plugin admin      → can validate any order
+//   Level 3: Order owner       → can only validate their own order
+//              └─ prevents a user from hammering Banxico with orders
+//                 that don't belong to them
 //
 // Request body:
 //   order_id (required) — The spei_orders record ID
@@ -15,10 +22,11 @@
 
 routerAdd("POST", "/api/spei/validate-cep", (e) => {
   const spei = require(`${__hooks}/spei_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
   const info = e.requestInfo();
   const body = info.body;
 
-  // Require authentication (staff only)
+  // Require authentication
   if (!info.auth || !info.auth.id) {
     throw new ForbiddenError("Authentication required");
   }
@@ -35,6 +43,15 @@ routerAdd("POST", "/api/spei/validate-cep", (e) => {
     order = $app.findRecordById("spei_orders", orderId);
   } catch (_) {
     throw new NotFoundError("Order not found");
+  }
+
+  // Allow: plugin admin OR the user who created the order
+  // (A user can force re-validate their own order, but not someone else's)
+  const isAdmin   = psh.isPluginAdmin(info.auth.id);
+  const ownerUser = order.getString("user");
+  const isOwner   = ownerUser && ownerUser === info.auth.id;
+  if (!isAdmin && !isOwner) {
+    throw new ForbiddenError("Not authorized to validate this order");
   }
 
   var currentStatus = order.getString("status");

@@ -1,29 +1,18 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// POST /api/spei/report-payment — Report a SPEI payment and trigger CEP validation.
-//
-// The user calls this endpoint after making a SPEI transfer.
-// It updates the order status to REPORTED and triggers automatic CEP validation.
-//
-// Request body:
-//   order_id        (required) — The spei_orders record ID
-//   criterio        (required) — Reference (7 chars) or tracking code (8-30 chars)
-//   emisor          (required) — Issuing bank code (e.g. "40012")
-//   monto_declarado (required) — Declared amount
-//
-// Response (success):
-//   { ok, status, message }
+// POST /api/spei/report-payment — Report a SPEI payment and trigger CEP validation (SECURE).
 // ─────────────────────────────────────────────────────────────────────────
 
 routerAdd("POST", "/api/spei/report-payment", (e) => {
   const spei = require(`${__hooks}/spei_api_client.js`);
   const info = e.requestInfo();
-  const body = info.body;
+  const body = info.body || {};
 
   const orderId = body["order_id"];
   const criterio = body["criterio"];
   const emisor = body["emisor"];
   const montoDeclarado = body["monto_declarado"];
+  const fechaPago = body["fecha_pago"];
 
   if (!orderId || !criterio || !emisor || !montoDeclarado) {
     throw new BadRequestError("order_id, criterio, emisor and monto_declarado are required");
@@ -45,12 +34,12 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
 
   // Validate order status
   var currentStatus = order.getString("status");
-  if (currentStatus !== "PENDING") {
-    throw new BadRequestError("Order must be in PENDING status to report payment");
+  if (currentStatus !== "PENDING" && currentStatus !== "REPORTED") {
+    throw new BadRequestError("Order status is " + currentStatus + ", cannot report payment.");
   }
 
   // ─── SECURITY CHECK 1: Order expiration (24h) ──────────────────────────
-  var created = new Date(order.getDate("created"));
+  var created = new Date(order.getString("created"));
   var now = new Date();
   var diffHours = (now - created) / (1000 * 60 * 60);
   if (diffHours > 24) {
@@ -61,160 +50,128 @@ routerAdd("POST", "/api/spei/report-payment", (e) => {
   var orderAmount = order.getFloat("amount");
   var declared = parseFloat(montoDeclarado);
   if (isNaN(declared) || declared <= 0) {
-    throw new BadRequestError("Invalid declared amount");
-  }
-  if (declared < orderAmount) {
-    throw new BadRequestError("Declared amount is less than order amount");
-  }
-  // Allow 10% tolerance for bank fees
-  if (declared > orderAmount * 1.1) {
-    throw new BadRequestError("Declared amount exceeds order amount");
+    throw new BadRequestError("monto_declarado must be a positive number");
   }
 
-  // ─── SECURITY CHECK 3: Check for CEP reuse ─────────────────────────────
-  // Same tracking code + amount + account should not be used twice
-  var existingCep;
-  try {
-    existingCep = $app.findRecordsByFilter(
-      "cep_verifications",
-      `tracking_code="${criterio}" && amount=${declared}`,
-      "", 1, 0
+  var amountDiff = Math.abs(orderAmount - declared);
+  if (amountDiff > 0.01) {
+    throw new BadRequestError(
+      "Declared amount ($" + declared + ") does not match order amount ($" + orderAmount + ")"
     );
-  } catch (_) {
-    existingCep = [];
-  }
-  if (existingCep && existingCep.length > 0) {
-    $app.logger().warn("[SPEI SECURITY] CEP reuse attempt", {
-      "order_id": orderId,
-      "criterio": criterio,
-      "amount": declared,
-      "existing_cep_id": existingCep[0].id,
-    });
-    throw new BadRequestError("This payment has already been reported for another order");
   }
 
-  // Get bank name for emisor
-  var emisorName = "";
+  // ─── SECURITY CHECK 3: Anti-Fraud Double-Spend Protection ─────────────
+  // Validar que la misma clave de rastreo/folio no haya sido utilizada ya en otra orden o membresía
   try {
-    var emisorBank = $app.findRecordsByFilter("spei_banks", `bank_code="${emisor}"`, "", 1, 0);
-    if (emisorBank && emisorBank.length > 0) {
-      emisorName = emisorBank[0].getString("bank_name");
+    var existingCep = $app.findFirstRecordByFilter(
+      "cep_verifications",
+      "(criterio = {:crit} || tracking_code = {:crit}) && order != {:orderId} && (status = 'LIQUIDADO' || status = 'REPORTED')",
+      { crit: criterio, orderId: orderId }
+    );
+    if (existingCep) {
+      throw new BadRequestError("Seguridad Anti-Fraude: Esta clave de rastreo/folio ya fue utilizada en otro pago de membresía.");
     }
-  } catch (_) {}
+  } catch (errCheck) {
+    if (errCheck.status === 400) throw errCheck;
+  }
 
-  // Update order with payment details
-  order.set("criterio", criterio);
-  order.set("emisor", emisor);
-  order.set("emisor_name", emisorName);
-  order.set("monto_declarado", String(montoDeclarado));
-  order.set("submitted_at", new Date().toISOString());
-  order.set("status", "REPORTED");
-  $app.save(order);
+  // Resolve receptor account and bank from spei_settings
+  var receptorData = spei.resolveReceptorFromOrder($app, order);
+  
+  // Utilizar la fecha indicada por el usuario o fallback a la fecha de creación en zona horaria America/Mexico_City
+  var targetDate = fechaPago ? fechaPago : created;
+  var fechaFormat = spei.formatCepDate(targetDate);
 
-  $app.logger().info(
-    "[SPEI] Payment reported",
-    "order_id", orderId,
-    "criterio", criterio,
-    "emisor", emisor
+  // ─── CEP VALIDATION VIA BANXICO NATIVO ─────────────────────────────────
+  var cepResult = { data: {} };
+  try {
+    cepResult = spei.validate(
+      fechaFormat,
+      criterio,
+      emisor,
+      receptorData.receptor,
+      receptorData.cuenta,
+      declared
+    );
+  } catch (errScrape) {
+    $app.logger().warn("[SPEI] Scraping CEP warning", "err", errScrape.message);
+    cepResult = { data: { status: "en proceso" } };
+  }
+
+  var evaluation = spei.evaluateCepResult(
+    cepResult.data || {},
+    declared,
+    receptorData.cuenta
   );
 
-  // ─── Trigger automatic CEP validation ──────────────────────────────────
-  var receptorData = spei.resolveReceptorFromOrder($app, order);
-
-  // Format date for CEP (DD-MM-YYYY)
-  var fecha = spei.formatCepDate(new Date());
-
-  // Call CEP validation
-  var cepResult;
+  // Update or create cep_verifications record
+  var cepCollection = $app.findCollectionByNameOrId("cep_verifications");
+  var cepRec;
   try {
-    cepResult = spei.validate(fecha, criterio, emisor, receptorData.receptor, receptorData.cuenta, String(montoDeclarado));
-  } catch (err) {
-    $app.logger().error("[SPEI] CEP validation error", "error", err.message);
-    return e.json(200, {
-      ok: true,
-      status: "REPORTED",
-      message: "Payment reported. CEP validation will be retried automatically.",
-    });
+    cepRec = $app.findFirstRecordByFilter("cep_verifications", "order = {:orderId}", { orderId: orderId });
+  } catch (_) {
+    cepRec = new Record(cepCollection);
+    cepRec.set("order", orderId);
   }
 
-  // Create cep_verification record
-  var cepCol = $app.findCollectionByNameOrId("cep_verifications");
-  var cepRec = new Record(cepCol);
-  cepRec.set("order", order.id);
-  cepRec.set("reference", cepResult.data.reference || null);
-  cepRec.set("tracking_code", cepResult.data.trackingCode || null);
-  cepRec.set("issuing_bank", cepResult.data.issuingBank || null);
-  cepRec.set("receiving_bank", cepResult.data.receivingBank || null);
-  cepRec.set("status_name", cepResult.data.statusName || cepResult.data.status || null);
-  cepRec.set("status_description", cepResult.data.statusDescription || null);
-  cepRec.set("reception_date", cepResult.data.receptionDate || null);
-  cepRec.set("processing_date", cepResult.data.processingDate || null);
-  cepRec.set("beneficiary_account", cepResult.data.beneficiaryAccount || null);
-  cepRec.set("amount", cepResult.data.amount ? parseFloat(cepResult.data.amount) : null);
-  cepRec.set("raw_response", cepResult.data);
-  $app.save(cepRec);
+  cepRec.set("criterio", criterio);
+  cepRec.set("emisor", emisor);
+  cepRec.set("monto_declarado", String(declared));
+  cepRec.set("reference", cepResult.data.reference || (criterioType === "R" ? criterio : ""));
+  cepRec.set("tracking_code", cepResult.data.trackingCode || (criterioType === "T" ? criterio : ""));
+  cepRec.set("issuing_bank", cepResult.data.issuingBank || emisor);
+  cepRec.set("receiving_bank", cepResult.data.receivingBank || receptorData.receptor);
+  cepRec.set("beneficiary_account", cepResult.data.beneficiaryAccount || receptorData.cuenta);
+  cepRec.set("amount", cepResult.data.amount ? parseFloat(cepResult.data.amount) : declared);
+  cepRec.set("raw_response", JSON.stringify(cepResult.data || {}));
 
-  // ─── Evaluate CEP result using shared logic ────────────────────────────
-  var evaluation = spei.evaluateCepResult(cepResult.data, String(montoDeclarado), receptorData.cuenta);
+  // Save order updates
+  order.set("criterio", criterio);
+  order.set("emisor", emisor);
+  order.set("monto_declarado", String(declared));
+  order.set("submitted_at", new Date().toISOString());
 
-  if (evaluation.shouldRetry) {
-    // Schedule retry
-    var retryCount = (order.getInt("retry_count") || 0) + 1;
-    order.set("retry_count", retryCount);
+  // SI NO HAY COINCIDENCIA EXACTA O LA TRANSFERENCIA AÚN NO ESTÁ DISPONIBLE EN BANXICO:
+  if (!evaluation.isMatch) {
+    var nextRetry = new Date(Date.now() + 5 * 60 * 1000);
+    order.set("next_retry_at", nextRetry.toISOString());
+    order.set("status", "REPORTED");
+    order.set("retry_count", (order.getInt("retry_count") || 0) + 1);
 
-    if (retryCount >= 12) {
-      // Too many retries — escalate to manual review
-      order.set("status", "MANUAL_REVIEW");
-      order.set("validated_at", new Date().toISOString());
-      $app.save(order);
-
-      cepRec.set("validated_match", false);
-      cepRec.set("mismatch_reason", "Maximum retries reached");
-      $app.save(cepRec);
-
-      return e.json(200, {
-        ok: true,
-        status: "MANUAL_REVIEW",
-        message: "Transfer still in process after multiple retries. Escalated to manual review.",
-      });
-    }
-
-    // Schedule next retry (5 minutes)
-    order.set("next_retry_at", new Date(Date.now() + 5 * 60 * 1000).toISOString());
     $app.save(order);
 
+    cepRec.set("status", "REPORTED");
+    cepRec.set("validated_match", false);
+    cepRec.set("mismatch_reason", evaluation.reason || "CEP no disponible aún en Banxico. Reintento automático programado.");
+    $app.save(cepRec);
+
+    $app.logger().info("[SPEI] Payment reported as pending match", "order_id", orderId);
+
     return e.json(200, {
       ok: true,
       status: "REPORTED",
-      message: "Transfer in process. Will retry in 5 minutes (attempt " + retryCount + "/12).",
+      is_liquidado: false,
+      message: "Pago reportado correctamente. La transferencia se encuentra en proceso de validación con Banxico CEP.",
     });
   }
 
-  // Update order based on evaluation result
+  // SI HAY COINCIDENCIA CONFIRMADA POR BANXICO (LIQUIDADO):
   order.set("validated_at", new Date().toISOString());
-  order.set("status", evaluation.newStatus);
+  order.set("status", "LIQUIDADO");
   order.set("next_retry_at", null);
   $app.save(order);
 
-  cepRec.set("validated_match", evaluation.isMatch);
-  if (!evaluation.isMatch) {
-    cepRec.set("mismatch_reason", evaluation.reason);
-  }
+  cepRec.set("status", "LIQUIDADO");
+  cepRec.set("validated_match", true);
+  cepRec.set("mismatch_reason", null);
   $app.save(cepRec);
 
-  if (evaluation.isMatch) {
-    $app.logger().info("[SPEI] Order LIQUIDADO", "order_id", orderId);
-
-    return e.json(200, {
-      ok: true,
-      status: "LIQUIDADO",
-      message: "CEP validated successfully. Payment confirmed.",
-    });
-  }
+  $app.logger().info("[SPEI] Order LIQUIDADO por Banxico CEP", "order_id", orderId);
 
   return e.json(200, {
     ok: true,
-    status: evaluation.newStatus,
-    message: "CEP validation failed: " + evaluation.reason,
+    status: "LIQUIDADO",
+    is_liquidado: true,
+    message: "¡Pago verificado y LIQUIDADO exitosamente por Banxico!",
   });
 });

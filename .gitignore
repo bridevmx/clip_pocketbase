@@ -1,0 +1,16 @@
+# PocketBase runtime data
+pb_data/
+
+# Binaries
+*.exe
+*.dll
+
+# Environment & local config
+.env
+*.local
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

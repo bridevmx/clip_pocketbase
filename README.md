@@ -41,13 +41,33 @@ Descarga o copia estos archivos en tu proyecto de PocketBase:
 ```
 tu-proyecto-pocketbase/
 ├── pb_hooks/
-│   ├── clip_00_bootstrap.pb.js        ← Mensajes de inicio
+│   ├── clip_00_bootstrap.pb.js        ← Mensajes de inicio CLIP
 │   ├── clip_api_client.js             ← Cliente HTTP para Clip API
-│   ├── clip_create_link.pb.js         ← Ruta: crear link de pago
+│   ├── clip_create_link.pb.js         ← Ruta: crear link de pago (con Secure Mode)
 │   ├── clip_webhook.pb.js             ← Ruta: recibir webhook
-│   └── my_app_clip_handler.pb.js      ← Tu lógica de negocio (editable)
-└── pb_migrations/
-    └── 1721500000_clip_collections.js  ← Crea las colecciones automáticamente
+│   ├── clip_refund.pb.js              ← Ruta: reembolsos (requiere admin)
+│   ├── clip_status_check.pb.js        ← Ruta: consultar estado (con auth/ownership)
+│   ├── clip_transactions.pb.js        ← Rutas: transacciones (requiere admin)
+│   ├── spei_00_bootstrap.pb.js        ← Mensajes de inicio SPEI
+│   ├── spei_api_client.js             ← Cliente CEP Banxico + utilidades
+│   ├── spei_create_order.pb.js        ← Ruta: crear orden SPEI (server-side amount)
+│   ├── spei_report_payment.pb.js      ← Ruta: reportar transferencia
+│   ├── spei_status_check.pb.js        ← Ruta: estado SPEI (con auth/ownership)
+│   ├── spei_validate_cep.pb.js        ← Ruta: re-validar CEP (3 niveles auth)
+│   ├── spei_cron_retry.pb.js          ← Cron: reintento automático CEP
+│   ├── plugin_settings_helper.js      ← Helper: autorización y settings centralizados
+│   ├── my_app_clip_handler.pb.js      ← Tu lógica de negocio CLIP (editable)
+│   └── my_app_spei_handler.pb.js      ← Tu lógica de negocio SPEI (editable)
+├── pb_migrations/
+│   ├── 1721500000_clip_collections.js
+│   ├── 1721500001_fix_clip_orders_partial_index.js
+│   ├── 1721500002_add_refund_fields.js
+│   ├── 1721500003_spei_collections.js
+│   ├── 1721500004_spei_banks_data.js
+│   ├── 1785454996_updated_cep_verifications.js
+│   └── 1785790000_plugin_settings.js  ← Colección de configuración de permisos
+└── pb_public/
+    └── spei-cep-form.html             ← Formulario público de reporte CEP
 ```
 
 > 💡 **¿Solo copiar y pegar?** Sí. No necesitas instalar npm packages, Docker, ni configuraciones complejas.
@@ -417,16 +437,30 @@ ERROR_CLIP  (Error al crear el link)
 
 | Archivo | Propósito | ¿Editable? |
 |---|---|---|
-| `clip_00_bootstrap.pb.js` | Mensajes de consola al iniciar | ❌ No |
+| `clip_00_bootstrap.pb.js` | Mensajes de consola al iniciar CLIP | ❌ No |
 | `clip_api_client.js` | Cliente HTTP centralizado para Clip API | ❌ No |
-| `clip_create_link.pb.js` | Ruta: `POST /api/clip/create-link` | ❌ No |
+| `clip_create_link.pb.js` | Ruta: `POST /api/clip/create-link` (con Secure Mode) | ❌ No |
 | `clip_webhook.pb.js` | Ruta: `POST /api/clip/webhook` | ❌ No |
 | `clip_refund.pb.js` | Ruta: `POST /api/clip/refund` | ❌ No |
-| `clip_transactions.pb.js` | Rutas: `GET /api/clip/transaction/{receipt}` y `GET /api/clip/transactions` | ❌ No |
+| `clip_transactions.pb.js` | Rutas: transacciones de Clip (requiere admin) | ❌ No |
 | `clip_status_check.pb.js` | Ruta: `GET /api/clip/order/{id}/status` | ❌ No |
-| `my_app_clip_handler.pb.js` | Tu lógica de negocio después del pago | ✅ **Sí — este es tuyo** |
-| `pb_migrations/1721500000_clip_collections.js` | Crea `clip_orders` y `clip_payments` | ❌ No |
-| `pb_migrations/1721500002_add_refund_fields.js` | Agrega campos de reembolso a `clip_orders` | ❌ No |
+| `spei_00_bootstrap.pb.js` | Mensajes de consola al iniciar SPEI | ❌ No |
+| `spei_api_client.js` | Cliente scraper CEP Banxico + utilidades | ❌ No |
+| `spei_create_order.pb.js` | Ruta: `POST /api/spei/create-order` | ❌ No |
+| `spei_report_payment.pb.js` | Ruta: `POST /api/spei/report-payment` | ❌ No |
+| `spei_status_check.pb.js` | Ruta: `GET /api/spei/order/{id}/status` | ❌ No |
+| `spei_validate_cep.pb.js` | Ruta: `POST /api/spei/validate-cep` | ❌ No |
+| `spei_cron_retry.pb.js` | Cron job: reintento automático CEP | ❌ No |
+| `plugin_settings_helper.js` | Helper de autorización y lectura de config | ❌ No |
+| `my_app_clip_handler.pb.js` | Tu lógica de negocio para pagos Clip | ✅ **Sí — este es tuyo** |
+| `my_app_spei_handler.pb.js` | Tu lógica de negocio para pagos SPEI | ✅ **Sí — este es tuyo** |
+| `pb_migrations/1721500000_clip_collections.js` | Colecciones CLIP (`clip_orders`, `clip_payments`) | ❌ No |
+| `pb_migrations/1721500001_fix_clip_orders_partial_index.js` | Fix índice parcial en `clip_orders` | ❌ No |
+| `pb_migrations/1721500002_add_refund_fields.js` | Campos de reembolso | ❌ No |
+| `pb_migrations/1721500003_spei_collections.js` | Colecciones SPEI | ❌ No |
+| `pb_migrations/1721500004_spei_banks_data.js` | Catálogo de bancos Banxico | ❌ No |
+| `pb_migrations/1785454996_updated_cep_verifications.js` | Relación order cascade delete fix | ❌ No |
+| `pb_migrations/1785790000_plugin_settings.js` | Colección de configuración de permisos | ❌ No |
 
 ---
 

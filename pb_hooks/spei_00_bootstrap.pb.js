@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 onBootstrap((e) => {
-  e.next();
+  if (typeof e.next === 'function') e.next();
   console.log("");
   console.log("[SPEI PLUGIN] Loaded successfully.");
   console.log("[SPEI PLUGIN] Expected collections: spei_settings, spei_orders, cep_verifications, spei_banks");

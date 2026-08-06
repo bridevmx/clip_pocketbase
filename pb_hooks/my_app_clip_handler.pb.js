@@ -37,6 +37,41 @@ onRecordAfterUpdateSuccess((e) => {
         console.log(`[CLIP ORDER] ✓ PAYMENT COMPLETED — receipt: ${receiptNo}, amount: ${amountPaid}, user: ${userId || "guest"}`);
 
         // ──────────────────────────────────────────────────────────────
+        // Lógica de negocio real para el sistema Dropper
+        // ──────────────────────────────────────────────────────────────
+        try {
+            if (refCollection === "customer_orders") {
+                // Pago B2C: el cliente pagó a la subtienda del Dropper
+                const order = $app.findRecordById("customer_orders", refId);
+                if (order.getString("status") !== "paid") {
+                    order.set("status", "paid");
+                    $app.save(order);
+                    console.log(`[CLIP HANDLER] ✓ Orden B2C ${refId} marcada como PAGADA.`);
+                }
+            } else if (refCollection === "dropper_orders") {
+                // Pago B2B: el Dropper pagó el costo mayorista al Supplier
+                const order = $app.findRecordById("dropper_orders", refId);
+                
+                // Cambiar estado a procesando (Supplier prepara el pedido)
+                order.set("status", "processing");
+                $app.save(order);
+
+                // Crear registro de pago recibido por el Supplier
+                const paymentsColl = $app.findCollectionByNameOrId("payments");
+                const payment = new Record(paymentsColl);
+                payment.set("order", order.id);
+                payment.set("method", "card_clip");
+                payment.set("amount", amountPaid);
+                payment.set("transaction_id", receiptNo || ("CLIP-" + orderId));
+                $app.save(payment);
+
+                console.log(`[CLIP HANDLER] ✓ Pedido B2B ${refId} marcado como PROCESANDO y pago registrado.`);
+            }
+        } catch (err) {
+            console.log(`[CLIP HANDLER ERROR] Error procesando negocio: ${err.message}`);
+        }
+
+        // ──────────────────────────────────────────────────────────────
         // EXAMPLE 1: Activate a product in your collection
         // ──────────────────────────────────────────────────────────────
         // const product = $app.findRecordById(refCollection, refId);
@@ -177,5 +212,5 @@ onRecordAfterUpdateSuccess((e) => {
         // });
     }
 
-    e.next();
+    if (typeof e.next === 'function') e.next();
 }, "clip_orders");

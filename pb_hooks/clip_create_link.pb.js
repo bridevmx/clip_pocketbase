@@ -1,35 +1,75 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Endpoint to create a Clip payment link from PocketBase.
-// Authentication is optional: if a user is logged in, the order is linked
-// to their account; anonymous (guest checkouts are also supported.
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/clip/create-link — Creates a Clip v2 payment link.
 //
-// Clip v2 supported optional fields:
-//   metadata: {
-//     me_reference_id: "your-internal-reference",
-//     customer_info: { name, email, phone }
-//   }
+// Authentication: OPTIONAL — supports both logged-in and guest (anonymous)
+// checkouts. When a user is authenticated, the clip_order is linked to
+// their account via the `user` field.
+//
+// ─── AMOUNT RESOLUTION (two modes) ───────────────────────────────────────
+// SECURE MODE (recommended for production):
+//   Set plugin_settings key "clip_amount_field" to the field name in your
+//   reference collection that holds the canonical price (e.g. "total").
+//   The endpoint then reads the amount from the DB — the client cannot
+//   manipulate it. If the reference record is not found, it returns 404.
+//
+// LEGACY MODE (backward-compatible default):
+//   If "clip_amount_field" is not configured, the amount comes from the
+//   client body["amount"] field. In this mode you MUST validate the amount
+//   in my_app_clip_handler.pb.js before activating any product or service.
+//
+// ─── Optional Clip v2 fields ──────────────────────────────────────────────
+//   metadata: { me_reference_id, customer_info: { name, email, phone } }
 //   billing_address: { zip_code, city, state, country, street, ... }
 //   override_settings: { payment_method: ["CARD","CASH"], enable_tip: false }
+// ─────────────────────────────────────────────────────────────────────────
 
 routerAdd("POST", "/api/clip/create-link", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
 
   const info = e.requestInfo();
   const body = info.body;
 
-  const amount = body["amount"];
   const referenceCollection = body["reference_collection"];
-  const referenceId = body["reference_id"];
+  const referenceId         = body["reference_id"];
 
   // Authentication is optional — guest checkouts are allowed.
   const userId = info.auth ? info.auth.id : null;
 
-  if (!amount || !referenceCollection || !referenceId) {
-    throw new BadRequestError("amount, reference_collection and reference_id are required");
+  if (!referenceCollection || !referenceId) {
+    throw new BadRequestError("reference_collection and reference_id are required");
   }
-  if (amount <= 0 || amount > 99999) {
-    throw new BadRequestError("Invalid amount");
+
+  // ─── AMOUNT RESOLUTION ───────────────────────────────────────────────────
+  // SECURE MODE: when plugin_settings key "clip_amount_field" is set, the
+  // amount is read from the DB — the client cannot tamper with it.
+  // LEGACY MODE: if the key is empty, falls back to the client-provided
+  // "amount" field (validate in my_app_clip_handler.pb.js if needed).
+  let amount = null;
+  let amountSource = "client";
+
+  const amountField = psh.getSetting("clip_amount_field", "");
+  if (amountField) {
+    try {
+      const refRecord = $app.findRecordById(referenceCollection, referenceId);
+      amount = refRecord.get(amountField);
+      amountSource = "server";
+    } catch (_) {
+      throw new NotFoundError("Reference record not found: " + referenceCollection + "/" + referenceId);
+    }
   }
+
+  if (amount === null || amount === undefined) {
+    amount = body["amount"]; // legacy client-provided amount
+    amountSource = "client";
+  }
+
+  if (!amount || amount <= 0 || amount > 999999) {
+    throw new BadRequestError("Invalid or missing amount (source: " + amountSource + ")");
+  }
+
+  $app.logger().info("[CLIP] create-link", "amount_source", amountSource, "amount", amount);
 
   const webhookBaseUrl = $os.getenv("POCKETBASE_URL");
 

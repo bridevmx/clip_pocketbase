@@ -5,13 +5,6 @@
 // Usage in any pb_hooks/*.pb.js file:
 //   const spei = require(`${__hooks}/spei_api_client.js`);
 //   const result = spei.validate(fecha, criterio, emisor, receptor, cuenta, monto);
-//
-// This module scrapes Banxico's CEP validation page.
-// Banxico does not provide a public API, so we parse the HTML response.
-//
-// NOTE: This file does NOT use the .pb.js extension — PocketBase only
-// auto-executes *.pb.js files as hooks. This file is loaded explicitly
-// via require() to share scope correctly across hooks.
 // ─────────────────────────────────────────────────────────────────────────
 
 var CEP_ORIGIN = "https://www.banxico.org.mx";
@@ -38,8 +31,8 @@ function stripAccents(s) {
 function decodeEntities(s) {
   return s
     .replace(/&aacute;/g, "a").replace(/&eacute;/g, "e")
-    .replace(/&iacute;/g, "i").replace(/&oacute;/g, "o")
-    .replace(/&uacute;/g, "u").replace(/&ntilde;/g, "n")
+    .replace(/&iacute;/g, "i").replace(/& конкуó/g, "o")
+    .replace(/&oacute;/g, "o").replace(/&uacute;/g, "u").replace(/&ntilde;/g, "n")
     .replace(/&Aacute;/g, "A").replace(/&Eacute;/g, "E")
     .replace(/&Iacute;/g, "I").replace(/&Oacute;/g, "O")
     .replace(/&Uacute;/g, "U").replace(/&Ntilde;/g, "N")
@@ -54,14 +47,17 @@ function cleanHtml(s) {
 }
 
 /**
- * Formats a Date object to DD-MM-YYYY for CEP validation.
- * @param {Date} date
+ * Formats a Date object or ISO string to DD-MM-YYYY in America/Mexico_City timezone.
+ * @param {Date|string} dateInput
  * @returns {string}
  */
-function formatCepDate(date) {
-  var day = String(date.getDate()).padStart(2, "0");
-  var month = String(date.getMonth() + 1).padStart(2, "0");
-  var year = date.getFullYear();
+function formatCepDate(dateInput) {
+  var d = new Date(dateInput);
+  var mexStr = d.toLocaleString("en-US", { timeZone: "America/Mexico_City" });
+  var mexDate = new Date(mexStr);
+  var day = String(mexDate.getDate()).padStart(2, "0");
+  var month = String(mexDate.getMonth() + 1).padStart(2, "0");
+  var year = mexDate.getFullYear();
   return day + "-" + month + "-" + year;
 }
 
@@ -100,40 +96,37 @@ function parseStatusDescription(html, id) {
     "i"
   );
   var m = re.exec(html);
-  if (m) {
-    return {
-      statusName: cleanHtml(m[1]),
-      statusDescription: cleanHtml(m[2]),
-    };
-  }
-  return null;
+  if (!m) return null;
+  return {
+    statusName: cleanHtml(m[1]),
+    statusDescription: cleanHtml(m[2]),
+  };
 }
 
-// ─── CRITERIO DETECTION ───────────────────────────────────────────────────
-
 /**
- * Detects the type of search criteria.
- * @param {string} criterio - Reference (7 chars) or tracking code (8-30 chars)
- * @returns {"R"|"T"|null} - R=folio, T=tracking code, null=invalid
+ * Detects whether criterio is a reference (7 digits) or tracking code (8-30 chars).
+ * @param {string} criterio
+ * @returns {"R"|"T"|null}
  */
 function detectCriterioType(criterio) {
-  var len = criterio.length;
-  if (len === 7) return "R";
-  if (len > 7 && len <= 30) return "T";
+  if (!criterio) return null;
+  criterio = safeTrim(criterio);
+  if (/^\d{7}$/.test(criterio)) return "R";
+  if (criterio.length >= 8 && criterio.length <= 30) return "T";
   return null;
 }
 
-// ─── CEP VALIDATION ───────────────────────────────────────────────────────
+// ─── VALIDATE (MAIN SCRAPER) ──────────────────────────────────────────────
 
 /**
- * Validates a CEP (Comprobante Electronico de Pago) against Banxico.
+ * Validates a SPEI transfer via Banxico CEP portal.
  *
- * @param {string} fecha    - Date in DD-MM-YYYY format
- * @param {string} criterio - Reference (7 chars) or tracking code (8-30 chars)
- * @param {string} emisor   - Issuing bank code (e.g. "40012")
- * @param {string} receptor - Receiving bank code (e.g. "40012")
- * @param {string} cuenta   - Beneficiary CLABE (18 digits)
- * @param {string} monto    - Amount (e.g. "100.00")
+ * @param {string} fecha       - Format "DD-MM-YYYY"
+ * @param {string} criterio    - Reference (7 digits) or tracking code (8-30 chars)
+ * @param {string} emisor      - Issuing bank code (5 digits, e.g. "40012")
+ * @param {string} receptor    - Receiving bank code (5 digits, e.g. "40012")
+ * @param {string} cuenta      - Beneficiary CLABE (18 digits)
+ * @param {number|string} monto- Transfer amount (e.g. 1500.50)
  * @returns {{ data: object, statusCode: number }}
  */
 function validate(fecha, criterio, emisor, receptor, cuenta, monto) {
@@ -302,27 +295,23 @@ function parseCepDate(dateStr) {
       parseInt(dateParts[0]),
       parseInt(timeParts[0]),
       parseInt(timeParts[1]),
-      parseInt(timeParts[2])
+      parseInt(timeParts[2] || "0")
     );
   } catch (_) {
     return null;
   }
 }
 
-// ─── CEP RESULT EVALUATION ────────────────────────────────────────────────
-// Shared logic for evaluating CEP validation results.
-// Used by both spei_report_payment and spei_validate_cep.
-
 /**
- * Evaluates a CEP validation result against expected values.
+ * Evaluates CEP scraper result against expected order details.
  *
- * @param {object} cepResult     - The CEP validation result data
+ * @param {object} cepResult       - The data object from validate()
  * @param {string} declaredAmount - The declared amount as string
  * @param {string} expectedAccount - The expected beneficiary CLABE
  * @returns {{ isMatch: boolean, newStatus: string, reason: string|null, shouldRetry: boolean }}
  */
 function evaluateCepResult(cepResult, declaredAmount, expectedAccount) {
-  if (!cepResult.found) {
+  if (!cepResult || !cepResult.found) {
     return { isMatch: false, newStatus: null, reason: "CEP not found", shouldRetry: true };
   }
 
@@ -374,10 +363,9 @@ function evaluateCepResult(cepResult, declaredAmount, expectedAccount) {
   return { isMatch: false, newStatus: "REJECTED", reason: reason, shouldRetry: false };
 }
 
-// ─── ORDER RESOLVER ───────────────────────────────────────────────────────
-
 /**
  * Resolves the receptor bank code and CLABE from an order's spei_settings.
+ * Automatically deduces 5-digit bank code from 18-digit CLABE prefix if needed.
  *
  * @param {object} app    - PocketBase app instance ($app)
  * @param {object} order  - The spei_orders record
@@ -396,6 +384,36 @@ function resolveReceptorFromOrder(app, order) {
         cuenta = speiSettings.getString("clabe");
       }
     } catch (_) {}
+  }
+
+  if (!receptor || !cuenta) {
+    try {
+      var defaultSettings = app.findFirstRecordByFilter("spei_settings", "is_active = true");
+      if (!receptor && defaultSettings) receptor = defaultSettings.getString("bank_code");
+      if (!cuenta && defaultSettings) cuenta = defaultSettings.getString("clabe");
+    } catch (_) {}
+  }
+
+  // Deducir código de 5 dígitos del Banco Receptor mediante los primeros 3 dígitos de la CLABE (estándar Banco de México)
+  if (cuenta && cuenta.length === 18 && (!receptor || receptor.length < 4 || isNaN(parseInt(receptor)))) {
+    var clabePrefix = cuenta.substring(0, 3);
+    var clabeBankMap = {
+      "012": "40012", // BBVA
+      "072": "40072", // Banorte
+      "002": "40002", // Banamex
+      "014": "40014", // Santander
+      "021": "40021", // HSBC
+      "044": "40044", // Scotiabank
+      "058": "40058", // Banregio
+      "062": "40062", // Afirme
+      "127": "40127", // Azteca
+      "137": "40137", // Coppel
+      "638": "90638", // Spin by OXXO
+      "846": "40846", // STP
+    };
+    if (clabeBankMap[clabePrefix]) {
+      receptor = clabeBankMap[clabePrefix];
+    }
   }
 
   return { receptor: receptor, cuenta: cuenta };

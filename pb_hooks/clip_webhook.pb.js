@@ -1,14 +1,9 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Clip v2 Checkout Webhook handler.
-//
-// Clip sends a minimal notification payload — the plugin re-queries the
-// Clip API for the real payment state before updating any record.
-// We never trust the webhook payload alone.
+// Clip v2 Checkout Webhook handler (SECURE).
 
 routerAdd("POST", "/api/clip/webhook", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
-
-  const body = e.requestInfo().body;
+  const body = e.requestInfo().body || {};
 
   const paymentRequestId = body["payment_request_id"] || body["id"];
 
@@ -59,13 +54,14 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   const receiptNo      = clipPayment["receipt_no"] || null;
   const amountPaid     = clipPayment["amount"] || 0;
 
-  // Find the matching clip_order by payment_request_id.
+  // Find the matching clip_order by payment_request_id using secure bind parameter.
   let orders;
   try {
     orders = $app.findRecordsByFilter(
       "clip_orders",
-      `clip_payment_request_id="${paymentRequestId}"`,
-      "-created", 1, 0
+      "clip_payment_request_id = {:paymentRequestId}",
+      "-created", 1, 0,
+      { paymentRequestId: paymentRequestId }
     );
   } catch (err) {
     $app.logger().warn("Clip webhook: order not found", "payment_id", paymentRequestId);
@@ -80,8 +76,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   const currentStatus = order.getString("status");
   const normalisedStatus = clip.normaliseClipStatus(resourceStatus);
 
-  // Idempotency: skip if the order is already in its final state (COMPLETED, CANCELED, EXPIRED)
-  // or if the status hasn't changed.
   if (currentStatus === "COMPLETED" || currentStatus === "CANCELED" || currentStatus === "EXPIRED" || currentStatus === normalisedStatus) {
     return e.json(200, { status: "already_processed", processed_status: currentStatus });
   }
@@ -99,7 +93,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
     }
     txApp.save(order);
 
-    // Audit log: record the webhook event.
     const paymentsCollection = txApp.findCollectionByNameOrId("clip_payments");
     const log = new Record(paymentsCollection);
     log.set("order", order.id);

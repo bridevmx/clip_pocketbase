@@ -2,7 +2,12 @@
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/clip/refund — Refund a completed order (full or partial).
 //
-// Requires superuser authentication.
+// Authentication: REQUIRED — Plugin admins only.
+// Access control (via plugin_settings_helper.isPluginAdmin):
+//   - Superusers (_superusers collection) always have access.
+//   - Users listed in plugin_settings "admin_user_ids" have access.
+//   This allows granting refund access to back-office operators without
+//   giving them full PocketBase superuser privileges.
 //
 // Request body:
 //   order_id  (required) — The clip_orders record ID
@@ -11,13 +16,11 @@
 //
 // Response (success):
 //   { success, refund_id, receipt_no, status, amount_refunded }
-//
-// Response (error):
-//   { success, error, message }
 // ─────────────────────────────────────────────────────────────────────────
 
 routerAdd("POST", "/api/clip/refund", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
   const info = e.requestInfo();
   const body = info.body;
 
@@ -27,10 +30,8 @@ routerAdd("POST", "/api/clip/refund", (e) => {
   if (!info.auth || !info.auth.id) {
     throw new ForbiddenError("Authentication required");
   }
-  try {
-    $app.findRecordById("_superusers", info.auth.id);
-  } catch (_) {
-    throw new ForbiddenError("Superuser authentication required");
+  if (!psh.isPluginAdmin(info.auth.id)) {
+    throw new ForbiddenError("Plugin admin authentication required");
   }
 
   const orderId = body["order_id"];

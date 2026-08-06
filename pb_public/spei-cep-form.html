@@ -288,19 +288,28 @@
         return;
       }
 
-      // Load spei_settings to show bank info
-      if (SPEI_SETTINGS_ID) {
-        fetch(PB_URL + "/api/collections/spei_settings/records/" + SPEI_SETTINGS_ID)
-          .then(function(r) { return r.json(); })
-          .then(function(d) {
-            document.getElementById("infoClabe").textContent = d.clabe || "-";
-            document.getElementById("infoBank").textContent = d.bank_name || "-";
-            document.getElementById("infoHolder").textContent = d.account_holder || "-";
-            document.getElementById("infoAmount").textContent = "$" + (EXPECTED_AMOUNT || "-");
+      // Consultar estado de la orden y datos bancarios desde la API segura
+      fetch(PB_URL + "/api/spei/order/" + ORDER_ID + "/status")
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.spei_settings) {
+            document.getElementById("infoClabe").textContent = d.spei_settings.clabe || "-";
+            document.getElementById("infoBank").textContent = d.spei_settings.bank_name || "-";
+            document.getElementById("infoHolder").textContent = d.spei_settings.account_holder || "-";
+            var amt = d.amount || EXPECTED_AMOUNT;
+            document.getElementById("infoAmount").textContent = "$" + (amt || "-");
             document.getElementById("bankInfo").style.display = "block";
-          })
-          .catch(function() {});
-      }
+
+            if (amt > 0) {
+              document.getElementById("monto").value = amt;
+            }
+          }
+          if (d.status === "LIQUIDADO") {
+            document.getElementById("results").classList.add("visible");
+            document.getElementById("resultContent").innerHTML = renderResult({ status: "LIQUIDADO", message: "Pago verificado y confirmado exitosamente por Banxico." });
+          }
+        })
+        .catch(function() {});
 
       if (EXPECTED_AMOUNT > 0) {
         document.getElementById("monto").value = EXPECTED_AMOUNT;

@@ -10,6 +10,13 @@
 
 routerAdd("GET", "/api/clip/transaction/{receiptNo}", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
+  const info = e.requestInfo();
+
+  if (!info.auth || !info.auth.id || !psh.isPluginAdmin(info.auth.id)) {
+    throw new ForbiddenError("Plugin admin authentication required");
+  }
+
   const receiptNo = e.request.params.receiptNo;
 
   if (!receiptNo) {
@@ -50,6 +57,13 @@ routerAdd("GET", "/api/clip/transaction/{receiptNo}", (e) => {
 
 routerAdd("GET", "/api/clip/transactions", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
+  const info = e.requestInfo();
+
+  if (!info.auth || !info.auth.id || !psh.isPluginAdmin(info.auth.id)) {
+    throw new ForbiddenError("Plugin admin authentication required");
+  }
+
   const query = e.requestInfo().query;
 
   const from = query.from;

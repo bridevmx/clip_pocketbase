@@ -1,17 +1,28 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// GET /api/clip/order/{id}/status — Check order status directly from Clip API
+// GET /api/clip/order/{id}/status — Re-queries Clip API for the live payment state.
 //
-// This endpoint works as an alternative to webhooks when they fail
-// (e.g. PocketHost hibernation). It queries the Clip API directly
-// and updates the order if the status has changed.
+// Use when webhooks are missed (e.g. server hibernation). Queries Clip
+// directly and updates the local clip_order if the status changed.
 //
-// Requires authentication.
+// Authentication: REQUIRED
+// Access control:
+//   - Plugin admins (superusers or users listed in plugin_settings
+//     "admin_user_ids") can query any order.
+//   - Regular users can only query orders linked to their own account.
+//   - Orders created by guests (no `user` field) are admin-only.
 // ─────────────────────────────────────────────────────────────────────────
 
 routerAdd("GET", "/api/clip/order/{id}/status", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
+  const psh  = require(`${__hooks}/plugin_settings_helper.js`);
   const orderId = e.request.params.id;
+
+  // Require authentication (documented in header but previously missing)
+  const info = e.requestInfo();
+  if (!info.auth || !info.auth.id) {
+    throw new UnauthorizedError("Authentication required");
+  }
 
   // Find the order
   var order;
@@ -19,6 +30,14 @@ routerAdd("GET", "/api/clip/order/{id}/status", (e) => {
     order = $app.findRecordById("clip_orders", orderId);
   } catch (_) {
     throw new NotFoundError("Order not found");
+  }
+
+  // Allow: plugin admin OR the user who created the order
+  const isAdmin   = psh.isPluginAdmin(info.auth.id);
+  const ownerUser = order.getString("user");
+  const isOwner   = ownerUser && ownerUser === info.auth.id;
+  if (!isAdmin && !isOwner) {
+    throw new ForbiddenError("Not authorized to view this order");
   }
 
   var paymentRequestId = order.getString("clip_payment_request_id");

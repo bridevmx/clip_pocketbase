@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 onBootstrap((e) => {
-    e.next();
+    if (typeof e.next === 'function') e.next();
     const apiKey = $os.getenv("CLIP_API_KEY");
     console.log("");
     console.log("[CLIP PLUGIN] Loaded successfully.");

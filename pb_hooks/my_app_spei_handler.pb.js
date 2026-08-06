@@ -1,92 +1,113 @@
 /// <reference path="../pb_data/types.d.ts" />
 // ─────────────────────────────────────────────────────────────────────────
-// YOUR BUSINESS LOGIC — this file is NOT part of the SPEI plugin.
-// Edit it freely. It runs whenever a spei_order changes state.
+// INTEGRACIÓN DEL PLUGIN SPEI/CEP CON EL SISTEMA DROPPER
 //
-// Fields available on the spei_order record:
-//   - status              (PENDING | REPORTED | LIQUIDADO | REJECTED | MANUAL_REVIEW | EXPIRED)
-//   - reference_collection (your host collection, e.g. "products", "orders", "subscriptions")
-//   - reference_id         (the record ID in that collection)
-//   - user                 (PocketBase user ID, or empty for guest checkouts)
-//   - amount / amount_paid / receipt_no / paid_at
-//   - criterio / emisor / emisor_name
-//
-// How it works:
-//   1. You create a record in YOUR collection (e.g. "orders")
-//   2. You call POST /api/spei/create-order with reference_collection + reference_id
-//   3. You show the user the CLABE to make the transfer
-//   4. User reports payment via POST /api/spei/report-payment
-//   5. Plugin validates CEP automatically
-//   6. When status changes to LIQUIDADO, this handler fires
-//   7. You perform your business logic (activate, ship, email, etc.)
+// Este handler reacciona automáticamente a los cambios de estado en `spei_orders`:
+// 1. Cuando la transferencia es validada exitosamente por Banxico (LIQUIDADO):
+//    - Marca la orden B2C (`customer_orders`) como "paid" (disparando auto_b2b_order).
+//    - Activa la membresía (`customer_memberships`) con regla de acumulación de días (rollover).
+// 2. Si la validación falla o excede los 12 reintentos (MANUAL_REVIEW):
+//    - Notifica al log y marca la orden para revisión manual por el Admin.
 // ─────────────────────────────────────────────────────────────────────────
 
 onRecordAfterUpdateSuccess((e) => {
     const status = e.record.getString("status");
-    const orderId = e.record.id;
+    const speiOrderId = e.record.id;
     const refCollection = e.record.getString("reference_collection");
     const refId = e.record.getString("reference_id");
 
-    console.log(`[SPEI ORDER] Order ${orderId} → status: ${status} | ref: ${refCollection}:${refId}`);
+    console.log(`[SPEI INTEGRATOR] Orden SPEI ${speiOrderId} cambió a estado: ${status} | Referencia: ${refCollection}:${refId}`);
 
-    // ─── PAYMENT LIQUIDADO ──────────────────────────────────────────────
     if (status === "LIQUIDADO") {
-        const userId = e.record.getString("user");
-        const amount = e.record.get("amount");
+        if (refCollection === "customer_orders" && refId) {
+            try {
+                const customerOrder = $app.findRecordById("customer_orders", refId);
+                if (customerOrder.getString("status") !== "paid") {
+                    console.log(`[SPEI INTEGRATOR] ✅ Transferencia validada por Banxico para orden B2C ${refId}. Marcando como PAGADA...`);
+                    customerOrder.set("status", "paid");
+                    $app.save(customerOrder);
+                    console.log(`[SPEI INTEGRATOR] ✅ Orden ${refId} marcada como 'paid'. El hook Auto-B2B generará la orden B2B correspondientemente.`);
+                }
+            } catch (err) {
+                console.error(`[SPEI INTEGRATOR ERROR] Error al actualizar la orden B2C ${refId}: ${err.message}`);
+            }
+        }
 
-        console.log(`[SPEI ORDER] ✓ PAYMENT LIQUIDADO — amount: ${amount}, user: ${userId || "guest"}`);
+        if (refCollection === "customer_memberships" && refId) {
+            try {
+                const cmRec = $app.findRecordById("customer_memberships", refId);
+                if (cmRec.getString("status") !== "active") {
+                    console.log(`[SPEI INTEGRATOR] ✅ Transferencia validada para membresía ${refId}. Activando con regla de rollover...`);
+                    const userId = cmRec.getString("customer");
+                    const membId = cmRec.getString("membership");
+                    const membRec = $app.findRecordById("memberships", membId);
+                    const durationDays = membRec.getInt("duration_days") || 30;
 
-        // ──────────────────────────────────────────────────────────────
-        // EXAMPLE 1: Activate a product in your collection
-        // ──────────────────────────────────────────────────────────────
-        // const product = $app.findRecordById(refCollection, refId);
-        // product.set("status", "active");
-        // product.set("paid_at", new Date().toISOString());
-        // $app.save(product);
+                    const nowTime = new Date();
+                    const nowMex = new Date(nowTime.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+                    let baseDate = nowMex;
 
-        // ──────────────────────────────────────────────────────────────
-        // EXAMPLE 2: Send confirmation email
-        // ──────────────────────────────────────────────────────────────
-        // const product = $app.findRecordById(refCollection, refId);
-        // const clientEmail = product.getString("client_email");
-        // $app.newMailClient().send({
-        //   from: { name: "My Store", address: "noreply@mystore.com" },
-        //   to: [{ name: "Customer", address: clientEmail }],
-        //   subject: "Payment confirmed — SPEI transfer",
-        //   htmlBody: `<h1>Thank you!</h1><p>Your payment of $${amount} MXN has been confirmed.</p>`,
-        // });
+                    // Acumulación: buscar si el usuario tiene fecha de vencimiento activa en el futuro
+                    try {
+                        const activeRecords = $app.findRecordsByFilter(
+                            "customer_memberships",
+                            "customer = {:userId} && status = 'active' && id != {:newId}",
+                            "-end_date",
+                            1,
+                            0,
+                            { userId: userId, newId: cmRec.id }
+                        );
+                        if (activeRecords.length > 0) {
+                            const currEndDateStr = activeRecords[0].getString("end_date");
+                            if (currEndDateStr) {
+                                const currEndDate = new Date(currEndDateStr);
+                                if (currEndDate > nowMex) {
+                                    baseDate = currEndDate;
+                                }
+                            }
+                        }
+                    } catch (_) {}
+
+                    const startDate = new Date(Date.UTC(nowMex.getFullYear(), nowMex.getMonth(), nowMex.getDate(), 0, 0, 0));
+                    const endDate = new Date(Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + durationDays, 23, 59, 59, 999));
+
+                    // Desactivar membresías previas del usuario
+                    try {
+                        const oldRecords = $app.findRecordsByFilter(
+                            "customer_memberships",
+                            "customer = {:userId} && status = 'active' && id != {:newId}",
+                            "-created",
+                            100,
+                            0,
+                            { userId: userId, newId: cmRec.id }
+                        );
+                        for (let k = 0; k < oldRecords.length; k++) {
+                            oldRecords[k].set("status", "cancelled");
+                            $app.save(oldRecords[k]);
+                        }
+                    } catch (_) {}
+
+                    cmRec.set("status", "active");
+                    cmRec.set("start_date", startDate.toISOString());
+                    cmRec.set("end_date", endDate.toISOString());
+                    $app.save(cmRec);
+                    console.log(`[SPEI INTEGRATOR] ✅ Membresía ${refId} activada exitosamente hasta ${endDate.toISOString()}`);
+                }
+            } catch (errCm) {
+                console.error(`[SPEI INTEGRATOR ERROR] Error activando customer_memberships ${refId}: ${errCm.message}`);
+            }
+        }
     }
 
-    // ─── PAYMENT REJECTED ──────────────────────────────────────────────
-    if (status === "REJECTED") {
-        console.log(`[SPEI ORDER] ✗ PAYMENT REJECTED for order ${orderId}`);
-
-        // Example: notify admin
-        // $app.newMailClient().send({
-        //   from: { name: "SPEI Plugin", address: "noreply@mystore.com" },
-        //   to: [{ name: "Admin", address: "admin@mystore.com" }],
-        //   subject: "SPEI payment rejected for order " + orderId,
-        //   htmlBody: `<p>Order ${orderId} (ref: ${refCollection}:${refId}) was rejected.</p>`,
-        // });
-    }
-
-    // ─── MANUAL REVIEW ─────────────────────────────────────────────────
     if (status === "MANUAL_REVIEW") {
-        console.log(`[SPEI ORDER] ⚠ MANUAL REVIEW required for order ${orderId}`);
-
-        // Example: notify admin for manual review
-        // $app.newMailClient().send({
-        //   from: { name: "SPEI Plugin", address: "noreply@mystore.com" },
-        //   to: [{ name: "Admin", address: "admin@mystore.com" }],
-        //   subject: "SPEI payment needs manual review — order " + orderId,
-        //   htmlBody: `<p>Order ${orderId} needs manual review. CEP validation inconclusive.</p>`,
-        // });
+        console.log(`[SPEI INTEGRATOR] ⚠️ Transferencia requiere REVISIÓN MANUAL para ${refCollection}:${refId}. Notificando al panel admin...`);
+        $app.logger().warn("[SPEI INTEGRATOR] Pago transferido requiere revisión manual", "ref_collection", refCollection, "ref_id", refId, "spei_order_id", speiOrderId);
     }
 
-    // ─── EXPIRED ───────────────────────────────────────────────────────
-    if (status === "EXPIRED") {
-        console.log(`[SPEI ORDER] ⏱ PAYMENT EXPIRED for order ${orderId}`);
+    if (status === "REJECTED" || status === "EXPIRED") {
+        console.log(`[SPEI INTEGRATOR] ❌ Transferencia ${status} para ${refCollection}:${refId}.`);
+        $app.logger().warn(`[SPEI INTEGRATOR] Pago transferido ${status}`, "ref_collection", refCollection, "ref_id", refId, "spei_order_id", speiOrderId);
     }
 
-    e.next();
+    if (typeof e.next === 'function') e.next();
 }, "spei_orders");
