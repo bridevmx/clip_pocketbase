@@ -1,5 +1,6 @@
 # PocketBase runtime data
 pb_data/
+backend/
 
 # Binaries
 *.exe
