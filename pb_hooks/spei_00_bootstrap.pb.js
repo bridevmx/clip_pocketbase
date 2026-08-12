@@ -1,17 +1,9 @@
 /// <reference path="../pb_data/types.d.ts" />
-// ─────────────────────────────────────────────────────────────────────────
-// SPEI/CEP Plugin — Bootstrap hook.
-// Runs once at PocketBase startup to print status messages.
-// Collections are created by migrations, not verified here.
-// ─────────────────────────────────────────────────────────────────────────
+// SPEI plugin routes and hooks are loaded automatically by PocketBase.
+// Configuration validation runs in clip_00_bootstrap.pb.js at startup.
+// To customize SPEI business logic, edit: pb_hooks/my_app_spei_handler.pb.js
 
 onBootstrap((e) => {
-  if (typeof e.next === 'function') e.next();
-  console.log("");
-  console.log("[SPEI PLUGIN] Loaded successfully.");
-  console.log("[SPEI PLUGIN] Expected collections: spei_settings, spei_orders, cep_verifications, spei_banks");
-  console.log("[SPEI PLUGIN] Active routes: POST /api/spei/create-order, POST /api/spei/report-payment");
-  console.log("[SPEI PLUGIN]                 POST /api/spei/validate-cep, GET /api/spei/order/{id}/status");
-  console.log("[SPEI PLUGIN] Business logic: -> pb_hooks/my_app_spei_handler.pb.js");
-  console.log("");
+  if (typeof e.next === "function") e.next();
+  // SPEI plugin loaded — validation handled by clip_00_bootstrap.pb.js
 });
