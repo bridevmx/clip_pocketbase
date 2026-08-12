@@ -58,12 +58,7 @@ function clipBasicAuthHeader() {
 function clipApiRequest(method, path, payload, timeoutSeconds) {
   const authHeader = clipBasicAuthHeader();
 
-  const tokenPreview = authHeader.substring(0, 20) + "...";
-  console.log("[CLIP DEBUG] " + method + " " + CLIP_API_BASE_URL + path);
-  console.log("[CLIP DEBUG] Auth header prefix: " + tokenPreview);
-  if (payload) {
-    console.log("[CLIP DEBUG] Request body: " + JSON.stringify(payload));
-  }
+  $app.logger().debug("Clip API request", "method", method, "path", path);
 
   const requestOptions = {
     method: method,
@@ -82,8 +77,7 @@ function clipApiRequest(method, path, payload, timeoutSeconds) {
 
   const res = $http.send(requestOptions);
 
-  console.log("[CLIP DEBUG] Response status: " + res.statusCode);
-  console.log("[CLIP DEBUG] Response body: " + res.raw);
+  $app.logger().debug("Clip API response", "method", method, "path", path, "status", res.statusCode);
 
   return {
     statusCode: res.statusCode,

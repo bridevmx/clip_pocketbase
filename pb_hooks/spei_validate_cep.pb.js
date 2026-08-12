@@ -28,7 +28,7 @@ routerAdd("POST", "/api/spei/validate-cep", (e) => {
 
   // Require authentication
   if (!info.auth || !info.auth.id) {
-    throw new ForbiddenError("Authentication required");
+    throw new UnauthorizedError("Authentication required");
   }
 
   const orderId = body["order_id"];
@@ -70,6 +70,13 @@ routerAdd("POST", "/api/spei/validate-cep", (e) => {
 
   // Resolve receptor from spei_settings
   var receptorData = spei.resolveReceptorFromOrder($app, order);
+
+  // Strict whitelist validation — prevents HTTP Parameter Pollution and injection
+  try {
+    spei.validateSpeiInputs(criterio, emisor, receptorData.cuenta, montoDeclarado);
+  } catch (validationErr) {
+    throw validationErr;
+  }
 
   // Format date for CEP (DD-MM-YYYY)
   var fecha = spei.formatCepDate(new Date());

@@ -15,6 +15,24 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 routerAdd("POST", "/api/spei/create-order", (e) => {
+  const psh = require(`${__hooks}/plugin_settings_helper.js`);
+  const rl  = require(`${__hooks}/rate_limiter.js`);
+
+  var rawAddr = e.request.remoteAddr || "";
+  var clientIp;
+  if (rawAddr.startsWith("[")) {
+    // IPv6: "[::1]:port" -> "::1"
+    clientIp = rawAddr.replace(/^\[/, "").split("]:")[0] || "unknown";
+  } else {
+    // IPv4: "1.2.3.4:port" -> "1.2.3.4"
+    clientIp = rawAddr.split(":")[0] || "unknown";
+  }
+  var rlResult = rl.checkLimit("spei_order:" + clientIp, 20, 60 * 1000); // 20 req/min per IP
+  if (!rlResult.allowed) {
+    $app.logger().warn("[SPEI] Rate limit exceeded on create-order", "ip", clientIp);
+    throw new ApiError(429, "Too many requests. Please try again later.");
+  }
+
   const info = e.requestInfo();
   const body = info.body || {};
 
@@ -30,18 +48,18 @@ routerAdd("POST", "/api/spei/create-order", (e) => {
 
   let finalAmount = 0;
   let speiSettings = null;
+  let refRecord = null;
 
   // ─── 1. SECURE SERVER-SIDE RESOLUTION ─────────────────────────────────────
   if (referenceCollection === "customer_orders") {
-    let customerOrder;
     try {
-      customerOrder = $app.findRecordById("customer_orders", referenceId);
+      refRecord = $app.findRecordById("customer_orders", referenceId);
     } catch (_) {
       throw new NotFoundError("customer_order not found");
     }
 
-    finalAmount = customerOrder.get("total") || 0;
-    const shopId = customerOrder.getString("shop");
+    finalAmount = refRecord.get("total") || 0;
+    const shopId = refRecord.getString("shop");
 
     // Buscar cuenta de la tienda usando parámetros vinculados seguros
     try {
@@ -63,14 +81,13 @@ routerAdd("POST", "/api/spei/create-order", (e) => {
     }
 
   } else if (referenceCollection === "dropper_orders") {
-    let dropperOrder;
     try {
-      dropperOrder = $app.findRecordById("dropper_orders", referenceId);
+      refRecord = $app.findRecordById("dropper_orders", referenceId);
     } catch (_) {
       throw new NotFoundError("dropper_order not found");
     }
 
-    finalAmount = dropperOrder.get("total") || 0;
+    finalAmount = refRecord.get("total") || 0;
 
     // Buscar cuenta del Supplier (user con rol admin) usando parámetros vinculados seguros
     try {
@@ -90,6 +107,23 @@ routerAdd("POST", "/api/spei/create-order", (e) => {
     }
   } else {
     throw new BadRequestError("Invalid reference_collection");
+  }
+
+  // IDOR protection: verify the authenticated user owns the reference record
+  if (info.auth && info.auth.id && refRecord) {
+    const recordOwner = refRecord.getString("user");
+    if (recordOwner && recordOwner !== info.auth.id) {
+      if (!psh.isPluginAdmin(info.auth.id)) {
+        $app.logger().warn(
+          "[SPEI] IDOR attempt: user tried to checkout a record they don't own",
+          "user_id", info.auth.id,
+          "record_owner", recordOwner,
+          "collection", referenceCollection,
+          "record_id", referenceId
+        );
+        throw new ForbiddenError("You cannot create a payment for a record you do not own");
+      }
+    }
   }
 
   // Fallback general: si no se encontró por relaciones explícitas, tomar primera activa

@@ -419,10 +419,52 @@ function resolveReceptorFromOrder(app, order) {
   return { receptor: receptor, cuenta: cuenta };
 }
 
+/**
+ * Validates all SPEI input parameters against strict whitelists.
+ * Call this before any external HTTP request to Banxico.
+ * Throws BadRequestError if any input is invalid.
+ *
+ * @param {string} criterio - 7-digit reference OR 8-30 alphanumeric tracking code
+ * @param {string} emisor - 5-digit Banxico bank code
+ * @param {string} cuenta - 18-digit CLABE beneficiary account
+ * @param {string|number} monto - positive amount with up to 2 decimal places
+ */
+function validateSpeiInputs(criterio, emisor, cuenta, monto) {
+  // criterio: 7 numeric digits (reference) OR 8-30 strict alphanumeric (tracking code)
+  if (!/^\d{7}$/.test(criterio) && !/^[A-Za-z0-9]{8,30}$/.test(criterio)) {
+    throw new BadRequestError(
+      "Invalid criterio format: must be exactly 7 digits (reference) or 8-30 alphanumeric characters (tracking code)"
+    );
+  }
+
+  // emisor: exactly 5 digits (Banxico institution code)
+  if (!/^\d{5}$/.test(emisor)) {
+    throw new BadRequestError(
+      "Invalid sender bank code (emisor): must be exactly 5 digits"
+    );
+  }
+
+  // cuenta: exactly 18 digits (CLABE)
+  if (!/^\d{18}$/.test(cuenta)) {
+    throw new BadRequestError(
+      "Invalid beneficiary account (cuenta): must be exactly 18 digits (CLABE format)"
+    );
+  }
+
+  // monto: positive number with up to 2 decimal places, > 0
+  var montoStr = String(monto).trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(montoStr) || parseFloat(montoStr) <= 0) {
+    throw new BadRequestError(
+      "Invalid amount (monto): must be a positive number with up to 2 decimal places"
+    );
+  }
+}
+
 // ─── EXPORTS ──────────────────────────────────────────────────────────────
 
 module.exports = {
   validate: validate,
+  validateSpeiInputs: validateSpeiInputs,
   detectCriterioType: detectCriterioType,
   parseCepTable: parseCepTable,
   parseCepDate: parseCepDate,

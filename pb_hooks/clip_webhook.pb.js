@@ -2,7 +2,17 @@
 // Clip v2 Checkout Webhook handler (SECURE).
 
 routerAdd("POST", "/api/clip/webhook", (e) => {
-  const clip = require(`${__hooks}/clip_api_client.js`);
+  // Validate webhook secret token (DoS protection)
+  const psh = require(`${__hooks}/plugin_settings_helper.js`);
+  const webhookSecret = psh.getSetting("clip_webhook_secret", "");
+  if (webhookSecret) {
+    const providedToken = (e.requestInfo().query || {})["token"] || "";
+    if (!providedToken || providedToken !== webhookSecret) {
+      $app.logger().warn("Clip webhook: invalid or missing secret token", "ip", e.request.remoteAddr);
+      throw new ForbiddenError("Invalid webhook token");
+    }
+  }
+
   const body = e.requestInfo().body || {};
 
   const paymentRequestId = body["payment_request_id"] || body["id"];
@@ -20,7 +30,27 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
 
   $app.logger().info("Clip webhook received", "payment_request_id", paymentRequestId);
 
+  // LOCAL CHECK FIRST — avoid outbound HTTP for unknown orders (DoS protection)
+  let orders;
+  try {
+    orders = $app.findRecordsByFilter(
+      "clip_orders",
+      "clip_payment_request_id = {:id} && (status = 'CREATED' || status = 'PENDING')",
+      "-created", 1, 0,
+      { id: paymentRequestId }
+    );
+  } catch (_) {
+    return e.json(200, { status: "order_not_found" });
+  }
+  if (!orders || orders.length === 0) {
+    $app.logger().info("Clip webhook: order not found or already terminal, skipping Clip API call", "payment_id", paymentRequestId);
+    return e.json(200, { status: "ignored_not_pending" });
+  }
+
+  const order = orders[0];
+
   // Query real payment state from Clip API (single source of truth).
+  const clip = require(`${__hooks}/clip_api_client.js`);
   let clipResult;
   try {
     clipResult = clip.request("GET", "/v2/checkout/" + paymentRequestId, null, 15);
@@ -54,25 +84,6 @@ routerAdd("POST", "/api/clip/webhook", (e) => {
   const receiptNo      = clipPayment["receipt_no"] || null;
   const amountPaid     = clipPayment["amount"] || 0;
 
-  // Find the matching clip_order by payment_request_id using secure bind parameter.
-  let orders;
-  try {
-    orders = $app.findRecordsByFilter(
-      "clip_orders",
-      "clip_payment_request_id = {:paymentRequestId}",
-      "-created", 1, 0,
-      { paymentRequestId: paymentRequestId }
-    );
-  } catch (err) {
-    $app.logger().warn("Clip webhook: order not found", "payment_id", paymentRequestId);
-    return e.json(200, { status: "order_not_found" });
-  }
-
-  if (!orders || orders.length === 0) {
-    return e.json(200, { status: "order_not_found" });
-  }
-
-  const order = orders[0];
   const currentStatus = order.getString("status");
   const normalisedStatus = clip.normaliseClipStatus(resourceStatus);
 

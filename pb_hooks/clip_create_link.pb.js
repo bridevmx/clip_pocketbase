@@ -27,6 +27,22 @@
 routerAdd("POST", "/api/clip/create-link", (e) => {
   const clip = require(`${__hooks}/clip_api_client.js`);
   const psh  = require(`${__hooks}/plugin_settings_helper.js`);
+  const rl   = require(`${__hooks}/rate_limiter.js`);
+
+  var rawAddr = e.request.remoteAddr || "";
+  var clientIp;
+  if (rawAddr.startsWith("[")) {
+    // IPv6: "[::1]:port" -> "::1"
+    clientIp = rawAddr.replace(/^\[/, "").split("]:")[0] || "unknown";
+  } else {
+    // IPv4: "1.2.3.4:port" -> "1.2.3.4"
+    clientIp = rawAddr.split(":")[0] || "unknown";
+  }
+  var rlResult = rl.checkLimit("clip_create:" + clientIp, 20, 60 * 1000); // 20 req/min per IP
+  if (!rlResult.allowed) {
+    $app.logger().warn("[CLIP] Rate limit exceeded on create-link", "ip", clientIp);
+    throw new ApiError(429, "Too many requests. Please try again later.");
+  }
 
   const info = e.requestInfo();
   const body = info.body;
@@ -50,13 +66,38 @@ routerAdd("POST", "/api/clip/create-link", (e) => {
   let amountSource = "client";
 
   const amountField = psh.getSetting("clip_amount_field", "");
+  var refRecord = null;
+
   if (amountField) {
     try {
-      const refRecord = $app.findRecordById(referenceCollection, referenceId);
+      refRecord = $app.findRecordById(referenceCollection, referenceId);
       amount = refRecord.get(amountField);
       amountSource = "server";
     } catch (_) {
       throw new NotFoundError("Reference record not found: " + referenceCollection + "/" + referenceId);
+    }
+  } else if (info.auth && info.auth.id) {
+    try {
+      refRecord = $app.findRecordById(referenceCollection, referenceId);
+    } catch (_) {
+      refRecord = null;
+    }
+  }
+
+  // IDOR protection: verify the authenticated user owns the reference record
+  if (refRecord && info.auth && info.auth.id) {
+    var recordOwner = refRecord.getString("user");
+    if (recordOwner && recordOwner !== info.auth.id) {
+      if (!psh.isPluginAdmin(info.auth.id)) {
+        $app.logger().warn(
+          "[CLIP] IDOR attempt: user tried to checkout a record they do not own",
+          "user_id", info.auth.id,
+          "record_owner", recordOwner,
+          "collection", referenceCollection,
+          "record_id", referenceId
+        );
+        throw new ForbiddenError("You cannot create a payment for a record you do not own");
+      }
     }
   }
 
