@@ -47,14 +47,14 @@ COPY --chown=pocketbase:pocketbase                    pb_public/        ./pb_pub
 USER pocketbase
 
 # Expose default PocketBase port
-EXPOSE 8090
+EXPOSE 8080
 
 # Declare persistent data volume (SQLite DB + file storage)
 VOLUME ["/pb/pb_data"]
 
 # Health check — Coolify and container orchestrators will use this
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget -q --spider http://127.0.0.1:8090/api/health || exit 1
+    CMD wget -q --spider http://127.0.0.1:8080/api/health || exit 1
 
 # Run PocketBase
-CMD ["/pb/pocketbase", "serve", "--http=0.0.0.0:8090"]
+CMD ["/pb/pocketbase", "serve", "--http=0.0.0.0:8080"]
