@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (ENDPOINTS-AND-INTEGRATION-GUIDE added)
+> Last updated: 2026-08-13 (pb-core secure dynamic engine — AES-124 auto-gen, mandatory superuser auth, locked system collections)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -51,6 +51,10 @@
   - [B1] Webhook secret token — `clip_webhook_secret` in `plugin_settings` verified via query param
   - [B2] Webhook idempotency reorder — order status checked before Clip API verification call
 - [COMPLETE] **Setup Wizard (`/setup`)** — interactive web UI to configure `CLIP_API_KEY`, `POCKETBASE_URL`, and `clip_webhook_secret` without Docker env vars or manual Admin UI edits; requires superuser auth to save credentials
+- [COMPLETE] **pb-core Secure Dynamic Engine** — AES encryption key auto-generated (124 chars via `$security.randomString`) on first boot if `ENCRYPTION_KEY` env var absent; persisted to `pb_data/.encryption_key` with POSIX `0o600` permissions; survives restarts via persistent volume
+- [COMPLETE] **Mandatory Superuser Auth (`system_auth.js`)** — `requireSuperuser(e)` helper; checks `e.hasSuperuserAuth()`, `_superusers` membership, or credentials `{ identity, password }` via `adminRecord.validatePassword()`; protects all `/api/v1/system/*` endpoints
+- [COMPLETE] **System Security Collections (migration `1700000000`)** — `z_system_settings_do_not_touch`, `z_system_hooks_do_not_touch`, `z_system_migrations_do_not_touch` created with **all API Rules set to `null`** (fully blocked from public REST API)
+- [COMPLETE] **Secure Sync & Transactional Migrations** — `system_bootstrap.pb.js` syncs active hooks to disk and re-applies pending migrations on `onBootstrap`; hook filenames validated with strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks overwriting engine files; migration `up_code`/`down_code` run inside atomic `txApp` transactions with automatic rollback
 
 ---
 
@@ -78,6 +82,10 @@
 - **`POST /api/plugin/setup` requires superuser auth:** Accepts `e.hasSuperuserAuth()` or superuser credentials in the request body; prevents unauthorized credential writes.
 - **`spei_settings` (bank accounts) are not overwritten during setup:** Setup Wizard only touches `plugin_settings` fields (`CLIP_API_KEY`, `POCKETBASE_URL`, `clip_webhook_secret`, `is_configured`).
 - **`GET /setup` serves a static HTML page** — `pb_public/setup.html` is served directly by PocketBase's built-in static file server; no extra framework needed.
+- **AES-124 char encryption key auto-generation on first boot:** `env_helper.js` generates the key via Go `crypto/rand` through `$security.randomString(124)` if `ENCRYPTION_KEY` env var is absent; persisted to `pb_data/.encryption_key` with `0o600` permissions; survives restarts via persistent volume. Chosen over requiring a pre-set env var to lower operator friction without sacrificing entropy.
+- **All `z_system_*` collection API Rules set to `null`:** Completely blocks all public REST API access at the PocketBase layer; the only valid access path is through `requireSuperuser(e)`-protected custom endpoints. Prevents accidental rule misconfiguration.
+- **Hook filename strict regex validation (`/^[a-zA-Z0-9_-]+\.pb\.js$/`):** Prevents path traversal and arbitrary file writes. `PROTECTED_CORE_FILES` list is an additional layer blocking overwrite of engine-level hooks.
+- **Migration `up_code`/`down_code` in atomic `txApp` transactions:** Ensures database consistency if a migration script fails midway; automatic rollback prevents partial migrations that would leave the schema in an unknown state.
 
 ---
 
@@ -108,11 +116,18 @@
 - `pb_hooks/spei_validate_cep.pb.js` — A5 validateSpeiInputs + corrected 401 vs 403 HTTP status codes
 - `pb_hooks/plugin_settings_helper.js` — **NEW** `getEnvOrSetting(key)` helper; reads env var first, falls back to `plugin_settings` DB record
 - `pb_hooks/plugin_config_validator.js` — **MODIFIED** soft-fail on `is_configured=false`; prints warning + `/setup` URL instead of fatal error
-- `pb_hooks/setup_wizard.pb.js` — **NEW** registers `GET /api/plugin/setup-status` (public) and `POST /api/plugin/setup` (superuser-only) endpoints
-- `pb_public/setup.html` — **NEW** static Setup Wizard UI; no JS framework; submits to `POST /api/plugin/setup`
-- `pb_migrations/1786000000_spei_cep_unique_criterio.js` — **NEW** UNIQUE conditional index on `cep_verifications` (race condition defense)
-- `pb_migrations/1786000001_clip_webhook_secret.js` — **NEW** adds `clip_webhook_secret` field to `plugin_settings`
-- `pb_migrations/1786000002_setup_wizard_settings.js` — **NEW** adds `POCKETBASE_URL` and `is_configured` fields to `plugin_settings`
+- `pb_hooks/setup_wizard.pb.js` — registers `GET /api/plugin/setup-status` (public) and `POST /api/plugin/setup` (superuser-only) endpoints
+- `pb_public/setup.html` — static Setup Wizard UI; no JS framework; submits to `POST /api/plugin/setup`
+- `pb_migrations/1786000000_spei_cep_unique_criterio.js` — UNIQUE conditional index on `cep_verifications` (race condition defense)
+- `pb_migrations/1786000001_clip_webhook_secret.js` — adds `clip_webhook_secret` field to `plugin_settings`
+- `pb_migrations/1786000002_setup_wizard_settings.js` — adds `POCKETBASE_URL` and `is_configured` fields to `plugin_settings`
+- `pb_hooks/system_auth.js` — **NEW** `requireSuperuser(e)` helper; verifies `e.hasSuperuserAuth()`, `_superusers` membership, or `{ identity, password }` credentials; protects all `/api/v1/system/*` endpoints
+- `pb_hooks/env_helper.js` — **UPDATED** auto-generates 124-char AES key via `$security.randomString(124)` on first boot if `ENCRYPTION_KEY` env var absent; persists to `pb_data/.encryption_key` with POSIX `0o600`; all `z_system_settings_do_not_touch` values always encrypted (`is_encrypted = true`)
+- `pb_migrations/1700000000_setup_system_collections.js` — **NEW** creates `z_system_settings_do_not_touch`, `z_system_hooks_do_not_touch`, `z_system_migrations_do_not_touch` with all API Rules set to `null`
+- `pb_hooks/system_bootstrap.pb.js` — **UPDATED** syncs active hooks to disk and re-applies pending migrations on `onBootstrap`
+- `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
+- `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
+- `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error
 - `docs/HANDOFF.md` — full project handoff with ADRs, endpoints, collections, status flows, known issues
 - `docs/HOOKS-MIGRATIONS-ENVS-GUIDE.md` — comprehensive technical reference for PocketBase v0.23+ JSVM: boot lifecycle, `pb_hooks` architecture, `routerAdd`/static routes, event hooks (`onBootstrap`, `onRecordCreate`, `onCron`), `require()` scope isolation, `$app.*` Records API, idempotent migrations, API rules, DB seeding, and hot-config system (`getEnvOrSetting()`, Setup Wizard, zero-downtime credential rotation)
 - `docs/ENDPOINTS-AND-INTEGRATION-GUIDE.md` — **NEW** integration manual covering all custom endpoints, PocketBase collections, and business hooks; intended for frontend developers and third-party integrators
