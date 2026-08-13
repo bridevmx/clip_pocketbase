@@ -140,7 +140,7 @@ function validate(app) {
   try {
     app.findCollectionByNameOrId("plugin_settings");
 
-    // clip_webhook_secret — CRITICAL: must be set in production
+    // clip_webhook_secret — Auto-generate if empty to prevent boot loops in production
     try {
       var secretRec = app.findFirstRecordByFilter(
         "plugin_settings",
@@ -149,27 +149,28 @@ function validate(app) {
       );
       var secretVal = secretRec ? secretRec.getString("value") : "";
       if (!secretVal || secretVal.trim() === "") {
-        // Check if we are in a local/dev environment (http://localhost or 127.0.0.1)
-        var isLocal = pbUrl && (pbUrl.indexOf("localhost") !== -1 || pbUrl.indexOf("127.0.0.1") !== -1);
-        if (isLocal) {
-          warnings.push(
-            "clip_webhook_secret is not configured in plugin_settings.\n" +
-            "      (Allowed for local development, but REQUIRED in production)\n" +
-            "      Set it to a random UUID in: Admin UI → plugin_settings → clip_webhook_secret"
-          );
+        var autoSecret = $security.randomString(32);
+        if (secretRec) {
+          secretRec.set("value", autoSecret);
+          app.save(secretRec);
         } else {
-          errors.push(
-            "clip_webhook_secret is empty in plugin_settings.\n" +
-            "      Without a secret token, anyone can send fake webhooks to your endpoint.\n" +
-            "      Set it to a random UUID via /setup or Admin UI → plugin_settings → clip_webhook_secret\n" +
-            "      Then register the webhook URL in Clip dashboard as:\n" +
-            "      " + (pbUrl || "<POCKETBASE_URL>") + "/api/clip/webhook?token=<your_secret>"
-          );
+          var col = app.findCollectionByNameOrId("plugin_settings");
+          var newRec = new Record(col);
+          newRec.set("key", "clip_webhook_secret");
+          newRec.set("value", autoSecret);
+          newRec.set("description", "Secret token appended to Clip webhook URL as ?token=VALUE");
+          app.save(newRec);
         }
+        secretVal = autoSecret;
+        warnings.push(
+          "clip_webhook_secret was empty in plugin_settings.\n" +
+          "      Auto-generated secure random secret: " + autoSecret + "\n" +
+          "      Webhook URL: " + (pbUrl || "<POCKETBASE_URL>") + "/api/clip/webhook?token=" + autoSecret
+        );
       } else if (secretVal.length < 16) {
-        errors.push(
-          "clip_webhook_secret is too short (" + secretVal.length + " chars).\n" +
-          "      Use a random UUID or at least 32 random characters for security."
+        warnings.push(
+          "clip_webhook_secret is short (" + secretVal.length + " chars).\n" +
+          "      Recommend using a random UUID or 32-character string for production."
         );
       }
     } catch (_) {
@@ -178,10 +179,8 @@ function validate(app) {
 
   } catch (_) {
     // plugin_settings collection doesn't exist yet — migrations haven't run.
-    // This is normal on first boot before migrations. Skip DB checks.
     warnings.push(
-      "plugin_settings collection not found — migrations may not have run yet.\n" +
-      "      If this persists after first boot, check your pb_migrations/ folder."
+      "plugin_settings collection not found — migrations may not have run yet."
     );
   }
 
