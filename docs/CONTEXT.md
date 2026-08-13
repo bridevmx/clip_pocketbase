@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (full unification to z_system_settings_do_not_touch; plugin_settings collection permanently dropped)
+> Last updated: 2026-08-13 (superuser security key + envelope encryption / key wrapping for master key)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -59,6 +59,8 @@
 - [COMPLETE] **Full Config Unification (`z_system_settings_do_not_touch`)** — all settings (`clip_api_key`, `pocketbase_url`, `clip_webhook_secret`, `admin_user_ids`, `is_configured`, `clip_amount_field`) now reside exclusively in `z_system_settings_do_not_touch`; `plugin_settings_helper.js` reads only via `envHelper.getEnv()`; dual-read path is gone
 - [COMPLETE] **`plugin_settings` Collection Permanently Dropped** — legacy collection removed via migration `1799000000_drop_legacy_plugin_settings.js` and via `$app.delete(legacyCol)` in `system_bootstrap.pb.js` and `setup_wizard.pb.js`; obsolete migrations that created the collection were also deleted
 - [COMPLETE] **Setup Wizard `ENCRYPTION_KEY` Requirement Removed** — `POST /api/plugin/setup` no longer requires `ENCRYPTION_KEY` in the request body; credentials are saved directly to `z_system_settings_do_not_touch` using the auto-generated 124-char master key from `envHelper.getMasterKey()`
+- [COMPLETE] **Envelope Encryption / Key Wrapping (`env_helper.js`)** — master key ($K_M$, 124 chars) is AES-256-GCM wrapped with a superuser passphrase ($K_S$); stored in `pb_data/.encryption_key` as JSON `{ version, wrapped, ciphertext }`; `wrapVault` refuses to regenerate the key if the vault is already wrapped-and-locked; file permissions `0o600`; precedence: disk file beats any env-var fallback
+- [COMPLETE] **Vault Key API Endpoints (`system_vault_api.pb.js`)** — `POST /api/v1/system/vault/unlock` (unlock with passphrase), `POST /api/v1/system/vault/enable-passphrase` (wrap or rotate passphrase, requires re-auth with old key), `GET /api/v1/system/vault/status` (returns `{ wrapped, locked, has_env_key }`); rate-limited 5 attempts/15 min per IP (evaluated before auth); all endpoints require `requireSuperuser(e)`
 
 ---
 
@@ -95,6 +97,9 @@
 - **Migration `up_code`/`down_code` in atomic `txApp` transactions:** Ensures database consistency if a migration script fails midway; automatic rollback prevents partial migrations that would leave the schema in an unknown state.
 - **`plugin_settings` collection dropped via migration + runtime guard:** Both `1799000000_drop_legacy_plugin_settings.js` and `$app.delete(legacyCol)` calls in `system_bootstrap.pb.js`/`setup_wizard.pb.js` ensure the collection cannot persist across deploys or restarts. Belt-and-suspenders approach chosen because migrations may not always run before hooks on first boot.
 - **Setup Wizard no longer requires `ENCRYPTION_KEY` in request body:** The wizard uses `envHelper.getMasterKey()` (auto-generated 124-char key already on disk) to encrypt saved credentials; removing the manual field eliminates a critical operator friction point and prevents key mismatch bugs.
+- **`wrapVault` refuses to re-generate master key if vault is already wrapped-and-locked:** Prevents accidental overwrite of an existing encrypted key — the operator must unlock the vault first before rotating the passphrase. Chosen as the safer default over silently overwriting.
+- **Rate limiting evaluated before auth on vault endpoints:** Brute-force protection (5 attempts / 15 min per IP) is applied as the very first line of the handler, before `requireSuperuser(e)`. Prevents exhausting the auth check itself as an oracle for timing attacks.
+- **Vault status endpoint (`GET /api/v1/system/vault/status`) intentionally does not filter content:** Returns raw `{ wrapped, locked, has_env_key }` — no sensitive data is included; withholding this state would only hinder legitimate operators.
 
 ---
 
@@ -128,6 +133,8 @@
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED** saves all credentials to `z_system_settings_do_not_touch`; `ENCRYPTION_KEY` no longer required in request body; drops any residual `plugin_settings` records on save; deletes legacy collection if still present
 - `pb_hooks/system_bootstrap.pb.js` — **UPDATED** `autoMigratePlaintextSettings()` IIFE: detects sensitive keys in `plugin_settings` plaintext, encrypts into `z_system_settings_do_not_touch`, hard-deletes source records with `$app.delete`; also drops the `plugin_settings` collection itself on boot if it still exists
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
+- `pb_hooks/env_helper.js` — **UPDATED** envelope encryption / key wrapping: master key wrapped with superuser passphrase via AES-256-GCM; `wrapVault` / `unwrapVault` / `getMasterKey` now support both plaintext and wrapped vault formats; disk file has precedence over env vars
+- `pb_hooks/system_vault_api.pb.js` — **NEW** vault key management endpoints: unlock, enable-passphrase (rotate), status; rate-limited + superuser-gated
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error

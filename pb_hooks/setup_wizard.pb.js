@@ -633,6 +633,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
 routerAdd("GET", "/api/plugin/setup-status", (e) => {
   var psh = require(`${__hooks}/plugin_settings_helper.js`);
+  var envHelper = require(`${__hooks}/env_helper.js`);
   var isConfigured = psh.getSetting("is_configured", "false") === "true";
 
   var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
@@ -646,10 +647,13 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
     }
   }
 
+  var vaultStatus = envHelper.getVaultStatus();
+
   return e.json(200, {
     is_configured: isConfigured,
     pocketbase_url_suggestion: pbUrl || "",
-    has_encryption_key: true
+    has_encryption_key: vaultStatus.has_env_key,
+    vault_status: vaultStatus
   });
 });
 
@@ -721,6 +725,17 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
 
   // ── Unified Encrypted Storage Execution ──────────────────────────────
   var envHelper = require(`${__hooks}/env_helper.js`);
+
+  // Wrap master key if security_key / passphrase is provided
+  var secKey = (body.security_key || body.passphrase || body.encryption_key || "").toString().trim();
+  if (secKey) {
+    try {
+      envHelper.wrapVault(secKey);
+    } catch (wrapErr) {
+      console.log("[SETUP ERROR] Failed to wrap vault with security key:", wrapErr.message);
+    }
+  }
+
   envHelper.setEnv("clip_api_key", clipApiKey, true);
   envHelper.setEnv("pocketbase_url", pbUrl, true);
   if (clipWebhookSecret) {
@@ -739,10 +754,13 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
     }
   } catch (_) {}
 
+  var currentVaultStatus = envHelper.getVaultStatus();
+
   return e.json(200, {
     success: true,
     message: "Plugin configuration completed successfully.",
     can_encrypt: true,
-    requires_env_setup: false
+    requires_env_setup: false,
+    vault_status: currentVaultStatus
   });
 });
