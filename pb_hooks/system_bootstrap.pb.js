@@ -162,15 +162,8 @@
                     continue;
                 }
 
-                var existingEncrypted = null;
-                try {
-                    existingEncrypted = envHelper.getEnv(key);
-                } catch (_) {}
-
-                if (!existingEncrypted) {
-                    envHelper.setEnv(key, currentVal, true);
-                    console.log("[BOOTSTRAP] Migrated key to encrypted store:", key);
-                }
+                envHelper.setEnv(key, currentVal, true);
+                console.log("[BOOTSTRAP] Migrated key to encrypted store:", key);
 
                 psRec.set("value", SENTINEL);
                 $app.save(psRec);
