@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (pb-core secure dynamic engine — AES-124 auto-gen, mandatory superuser auth, locked system collections)
+> Last updated: 2026-08-13 (plaintext legacy removal — sensitive keys purged from plugin_settings; full AES-only path enforced)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -54,7 +54,8 @@
 - [COMPLETE] **pb-core Secure Dynamic Engine** — AES encryption key auto-generated (124 chars via `$security.randomString`) on first boot if `ENCRYPTION_KEY` env var absent; persisted to `pb_data/.encryption_key` with POSIX `0o600` permissions; survives restarts via persistent volume
 - [COMPLETE] **Mandatory Superuser Auth (`system_auth.js`)** — `requireSuperuser(e)` helper; checks `e.hasSuperuserAuth()`, `_superusers` membership, or credentials `{ identity, password }` via `adminRecord.validatePassword()`; protects all `/api/v1/system/*` endpoints
 - [COMPLETE] **System Security Collections (migration `1700000000`)** — `z_system_settings_do_not_touch`, `z_system_hooks_do_not_touch`, `z_system_migrations_do_not_touch` created with **all API Rules set to `null`** (fully blocked from public REST API)
-- [COMPLETE] **Secure Sync & Transactional Migrations** — `system_bootstrap.pb.js` syncs active hooks to disk and re-applies pending migrations on `onBootstrap`; hook filenames validated with strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks overwriting engine files; migration `up_code`/`down_code` run inside atomic `txApp` transactions with automatic rollback
+- [COMPLETE] **Secure Sync & Transactional Migrations** — `system_bootstrap.pb.js` syncs active hooks to disk and re-applies pending migrations on `onBootstrap`; hook filenames validated with strict regex `/^[a-zA-Z0-9_-]+\\.pb\\.js$/`; `PROTECTED_CORE_FILES` list blocks overwriting engine files; migration `up_code`/`down_code` run inside atomic `txApp` transactions with automatic rollback
+- [COMPLETE] **Legacy Plaintext Settings Purge** — `clip_api_key`, `pocketbase_url`, `clip_webhook_secret` no longer read from nor written to `plugin_settings` in plaintext; full AES-only path via `z_system_settings_do_not_touch` enforced across all hooks; `autoMigratePlaintextSettings()` in `system_bootstrap.pb.js` detects, encrypts, and hard-deletes (`$app.delete`) legacy plaintext records on startup (idempotent)
 
 ---
 
@@ -77,10 +78,13 @@
 - **`$BUILDPLATFORM` in Stage 1 (download), `$TARGETPLATFORM` in Stage 2 (runtime):** avoids unnecessary QEMU emulation during binary download; final image is native ARM64.
 - **SHA-256 verification of PocketBase binary:** `checksums.txt` from GitHub Releases is used; `cd /tmp` before download required so the filename matches the checksum entry.
 - **Non-root user `pocketbase`:** `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` must be done before the `VOLUME` declaration to ensure write permissions.
-- **`getEnvOrSetting()` priority: env vars over DB settings** — `$os.getenv` is checked first; if not set, falls back to `plugin_settings` in the database. Env vars in Coolify/Easypanel always take precedence when present.
+- **`getEnvOrSetting()` priority: env vars over encrypted DB** — `$os.getenv` first; then `envHelper.getEnv()` reading from `z_system_settings_do_not_touch` (AES-decrypted); then `defaultValue`. The former step 3 reading from `plugin_settings` plaintext was permanently removed.
+- **Hard-delete (`$app.delete`) of legacy plaintext records in `plugin_settings`:** After encrypting into `z_system_settings_do_not_touch`, `autoMigratePlaintextSettings()` permanently deletes the source record instead of nullifying it — eliminates any residual plaintext at rest.
+- **`setup_wizard.pb.js` saves credentials exclusively to `z_system_settings_do_not_touch`:** If a sensitive key still exists in `plugin_settings`, the wizard deletes it on save. No dual-write path remains.
+- **`plugin_config_validator.js` reads credentials via `envHelper.getEnv()`:** Auto-generates `clip_webhook_secret` (32 chars) in `z_system_settings_do_not_touch` if absent; no longer reads from `plugin_settings`.
+- **`clip_webhook.pb.js` reads `clip_webhook_secret` via `psh.getEnvOrSetting()`:** Follows the new 3-step AES resolution path; webhook validation no longer touches `plugin_settings`.
 - **Setup Wizard does not fail PocketBase boot:** If `is_configured` is `"false"`, `plugin_config_validator.js` prints a warning and invites the user to visit `/setup` instead of throwing a fatal error that would halt boot.
 - **`POST /api/plugin/setup` requires superuser auth:** Accepts `e.hasSuperuserAuth()` or superuser credentials in the request body; prevents unauthorized credential writes.
-- **`spei_settings` (bank accounts) are not overwritten during setup:** Setup Wizard only touches `plugin_settings` fields (`CLIP_API_KEY`, `POCKETBASE_URL`, `clip_webhook_secret`, `is_configured`).
 - **`GET /setup` serves a static HTML page** — `pb_public/setup.html` is served directly by PocketBase's built-in static file server; no extra framework needed.
 - **AES-124 char encryption key auto-generation on first boot:** `env_helper.js` generates the key via Go `crypto/rand` through `$security.randomString(124)` if `ENCRYPTION_KEY` env var is absent; persisted to `pb_data/.encryption_key` with `0o600` permissions; survives restarts via persistent volume. Chosen over requiring a pre-set env var to lower operator friction without sacrificing entropy.
 - **All `z_system_*` collection API Rules set to `null`:** Completely blocks all public REST API access at the PocketBase layer; the only valid access path is through `requireSuperuser(e)`-protected custom endpoints. Prevents accidental rule misconfiguration.
@@ -110,13 +114,13 @@
 - `pb_hooks/clip_api_client.js` — HTTP client for Clip API; debug logs with token removed (structured logging only); updated to use `getEnvOrSetting()`
 - `pb_hooks/spei_api_client.js` — CEP validation client; now exports `validateSpeiInputs()` for shared input sanitization
 - `pb_hooks/spei_report_payment.pb.js` — A1 reserve-then-validate + A5 sanitization + A6 rate limit applied
-- `pb_hooks/clip_webhook.pb.js` — A2 local DB check before Clip API + B1 secret token + B2 idempotency reorder
+- `pb_hooks/clip_webhook.pb.js` — A2 local DB check before Clip API + B1 secret token + B2 idempotency reorder; **UPDATED** reads `clip_webhook_secret` via `psh.getEnvOrSetting()` (AES path); no longer touches `plugin_settings`
 - `pb_hooks/clip_create_link.pb.js` — A3 IDOR check (both auth modes) + A6 rate limit
 - `pb_hooks/spei_create_order.pb.js` — A3 IDOR check + A6 rate limit
 - `pb_hooks/spei_validate_cep.pb.js` — A5 validateSpeiInputs + corrected 401 vs 403 HTTP status codes
-- `pb_hooks/plugin_settings_helper.js` — **NEW** `getEnvOrSetting(key)` helper; reads env var first, falls back to `plugin_settings` DB record
-- `pb_hooks/plugin_config_validator.js` — **MODIFIED** soft-fail on `is_configured=false`; prints warning + `/setup` URL instead of fatal error
-- `pb_hooks/setup_wizard.pb.js` — registers `GET /api/plugin/setup-status` (public) and `POST /api/plugin/setup` (superuser-only) endpoints
+- `pb_hooks/plugin_settings_helper.js` — **UPDATED** `getEnvOrSetting(envKey, settingKey, default)` 3-step: OS env → `envHelper.getEnv()` AES-decrypted → default; plaintext `plugin_settings` fallback permanently removed
+- `pb_hooks/plugin_config_validator.js` — **UPDATED** reads credentials via `envHelper.getEnv()`; auto-generates `clip_webhook_secret` (32 chars) in `z_system_settings_do_not_touch` if absent; soft-fail on `is_configured=false`
+- `pb_hooks/setup_wizard.pb.js` — **UPDATED** saves all sensitive credentials exclusively to `z_system_settings_do_not_touch`; deletes any residual plaintext records in `plugin_settings` on save
 - `pb_public/setup.html` — static Setup Wizard UI; no JS framework; submits to `POST /api/plugin/setup`
 - `pb_migrations/1786000000_spei_cep_unique_criterio.js` — UNIQUE conditional index on `cep_verifications` (race condition defense)
 - `pb_migrations/1786000001_clip_webhook_secret.js` — adds `clip_webhook_secret` field to `plugin_settings`
@@ -124,7 +128,7 @@
 - `pb_hooks/system_auth.js` — **NEW** `requireSuperuser(e)` helper; verifies `e.hasSuperuserAuth()`, `_superusers` membership, or `{ identity, password }` credentials; protects all `/api/v1/system/*` endpoints
 - `pb_hooks/env_helper.js` — **UPDATED** auto-generates 124-char AES key via `$security.randomString(124)` on first boot if `ENCRYPTION_KEY` env var absent; persists to `pb_data/.encryption_key` with POSIX `0o600`; all `z_system_settings_do_not_touch` values always encrypted (`is_encrypted = true`)
 - `pb_migrations/1700000000_setup_system_collections.js` — **NEW** creates `z_system_settings_do_not_touch`, `z_system_hooks_do_not_touch`, `z_system_migrations_do_not_touch` with all API Rules set to `null`
-- `pb_hooks/system_bootstrap.pb.js` — **UPDATED** syncs active hooks to disk and re-applies pending migrations on `onBootstrap`
+- `pb_hooks/system_bootstrap.pb.js` — **UPDATED** `autoMigratePlaintextSettings()` IIFE: detects sensitive keys in `plugin_settings` plaintext, encrypts into `z_system_settings_do_not_touch`, hard-deletes source records with `$app.delete`
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error

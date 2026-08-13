@@ -72,11 +72,39 @@ function printConfigBanner(errors, warnings) {
  * @throws {Error} if any critical config is missing
  */
 function validate(app) {
+  var errors   = [];
+  var warnings = [];
+
+  // ── CRITICAL: Verify ENCRYPTION_KEY is configured ──────────────────
+  var encKey = $os.getenv("ENCRYPTION_KEY");
+  if (!encKey || encKey.trim() === "") {
+    errors.push(
+      "ENCRYPTION_KEY environment variable is not set.\n" +
+      "      All credentials are encrypted at rest and REQUIRE this key.\n" +
+      "      Set it in your Docker/Coolify environment before starting PocketBase.\n" +
+      "      If this is a fresh install, run the Setup Wizard at /setup — it will\n" +
+      "      generate a key for you. Copy it and add it to your environment."
+    );
+    // If ENCRYPTION_KEY is missing, all other checks will fail — report and return early
+    printConfigBanner(errors, warnings);
+    throw new Error("[PAYMENTS PLUGIN] Startup aborted: ENCRYPTION_KEY is not configured.");
+  }
+  if (encKey.trim().length < 32) {
+    errors.push(
+      "ENCRYPTION_KEY is too short (" + encKey.trim().length + " chars). Minimum is 32 characters.\n" +
+      "      Generate a new key: openssl rand -hex 32\n" +
+      "      Or use the Setup Wizard at /setup to generate one."
+    );
+    printConfigBanner(errors, warnings);
+    throw new Error("[PAYMENTS PLUGIN] Startup aborted: ENCRYPTION_KEY is too short.");
+  }
+
   var psh = require(`${__hooks}/plugin_settings_helper.js`);
+  var envHelper = require(`${__hooks}/env_helper.js`);
 
   var isConfigured = psh.getSetting("is_configured", "false");
-  var clipApiKey   = psh.getEnvOrSetting("CLIP_API_KEY", "clip_api_key", "");
-  var pbUrl        = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
+  var clipApiKey   = envHelper.getEnv("clip_api_key") || envHelper.getEnv("CLIP_API_KEY") || "";
+  var pbUrl        = envHelper.getEnv("pocketbase_url") || envHelper.getEnv("POCKETBASE_URL") || "";
 
   // If setup wizard has not been completed and environment variables are absent,
   // do not throw fatal error. Display friendly wizard instruction banner.
@@ -96,9 +124,6 @@ function validate(app) {
     console.log("");
     return;
   }
-
-  var errors   = [];
-  var warnings = [];
 
   // ── CRITICAL: Configuration checks ───────────────────────────────────
 
@@ -134,54 +159,25 @@ function validate(app) {
     );
   }
 
-  // ── CRITICAL: plugin_settings collection checks ────────────────────────
-  // These checks only run if the DB is accessible (migrations already ran).
-
+  // ── Encrypted system settings checks ─────────────────────────────────
   try {
-    app.findCollectionByNameOrId("plugin_settings");
-
-    // clip_webhook_secret — Auto-generate if empty to prevent boot loops in production
-    try {
-      var secretRec = app.findFirstRecordByFilter(
-        "plugin_settings",
-        "key = {:key}",
-        { key: "clip_webhook_secret" }
+    var secretVal = envHelper.getEnv("clip_webhook_secret");
+    if (!secretVal || secretVal.trim() === "") {
+      var autoSecret = $security.randomString(32);
+      envHelper.setEnv("clip_webhook_secret", autoSecret, true);
+      warnings.push(
+        "clip_webhook_secret was empty in z_system_settings_do_not_touch.\n" +
+        "      Auto-generated secure random secret: " + autoSecret + "\n" +
+        "      Webhook URL: " + (pbUrl || "<POCKETBASE_URL>") + "/api/clip/webhook?token=" + autoSecret
       );
-      var secretVal = secretRec ? secretRec.getString("value") : "";
-      if (!secretVal || secretVal.trim() === "") {
-        var autoSecret = $security.randomString(32);
-        if (secretRec) {
-          secretRec.set("value", autoSecret);
-          app.save(secretRec);
-        } else {
-          var col = app.findCollectionByNameOrId("plugin_settings");
-          var newRec = new Record(col);
-          newRec.set("key", "clip_webhook_secret");
-          newRec.set("value", autoSecret);
-          newRec.set("description", "Secret token appended to Clip webhook URL as ?token=VALUE");
-          app.save(newRec);
-        }
-        secretVal = autoSecret;
-        warnings.push(
-          "clip_webhook_secret was empty in plugin_settings.\n" +
-          "      Auto-generated secure random secret: " + autoSecret + "\n" +
-          "      Webhook URL: " + (pbUrl || "<POCKETBASE_URL>") + "/api/clip/webhook?token=" + autoSecret
-        );
-      } else if (secretVal.length < 16) {
-        warnings.push(
-          "clip_webhook_secret is short (" + secretVal.length + " chars).\n" +
-          "      Recommend using a random UUID or 32-character string for production."
-        );
-      }
-    } catch (_) {
-      warnings.push("Could not read clip_webhook_secret from plugin_settings (record may not exist yet).");
+    } else if (secretVal.length < 16) {
+      warnings.push(
+        "clip_webhook_secret is short (" + secretVal.length + " chars).\n" +
+        "      Recommend using a random UUID or 32-character string for production."
+      );
     }
-
-  } catch (_) {
-    // plugin_settings collection doesn't exist yet — migrations haven't run.
-    warnings.push(
-      "plugin_settings collection not found — migrations may not have run yet."
-    );
+  } catch (secErr) {
+    warnings.push("Could not read/write clip_webhook_secret in z_system_settings_do_not_touch: " + secErr.message);
   }
 
   // ── WARNING: spei_settings — at least one active account ──────────────

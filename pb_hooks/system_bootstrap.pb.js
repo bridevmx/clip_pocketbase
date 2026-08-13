@@ -158,16 +158,13 @@
                 if (!psRec) continue;
                 var currentVal = psRec.getString("value");
 
-                if (currentVal === SENTINEL || currentVal === "" || currentVal === "[ENCRYPTED]") {
-                    continue;
+                if (currentVal && currentVal !== SENTINEL && currentVal !== "[ENCRYPTED]") {
+                    envHelper.setEnv(key, currentVal, true);
+                    console.log("[BOOTSTRAP] Migrated key to encrypted store:", key);
                 }
 
-                envHelper.setEnv(key, currentVal, true);
-                console.log("[BOOTSTRAP] Migrated key to encrypted store:", key);
-
-                psRec.set("value", SENTINEL);
-                $app.save(psRec);
-                console.log("[BOOTSTRAP] Plaintext cleared from plugin_settings for key:", key);
+                $app.delete(psRec);
+                console.log("[BOOTSTRAP] Deleted legacy record from plugin_settings for key:", key);
 
             } catch (migErr) {
                 console.log("[BOOTSTRAP] Migration error for key:", key, "-", migErr.message);

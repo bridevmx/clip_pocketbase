@@ -117,6 +117,62 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
         <div>
           <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <h2 class="text-base font-semibold text-slate-200">Seguridad y Cifrado</h2>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                ENCRYPTION_KEY (Clave Maestra de Cifrado)
+              </label>
+
+              <!-- Shown when has_encryption_key === true -->
+              <div id="encKeyServerNotice" class="hidden p-4 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-medium space-y-1">
+                <div class="flex items-center space-x-2 font-bold text-emerald-400 text-sm">
+                  <span>✓ Configurada en el entorno del servidor</span>
+                </div>
+                <p class="text-slate-300">Las credenciales de Clip y SPEI se cifrarán automáticamente en reposo.</p>
+              </div>
+
+              <!-- Shown when has_encryption_key === false -->
+              <div id="encKeyFormContainer" class="space-y-3">
+                <div class="p-3.5 bg-amber-950/50 border border-amber-500/40 rounded-xl text-xs text-amber-300 space-y-1">
+                  <div class="font-bold text-amber-400">⚠️ No se detectó ENCRYPTION_KEY en el servidor</div>
+                  <p class="text-slate-300">
+                    El wizard generará una clave segura. <strong class="text-amber-300 font-semibold">DEBES copiarla y configurarla como variable de entorno antes de reiniciar PocketBase.</strong>
+                  </p>
+                </div>
+
+                <div class="flex space-x-2">
+                  <input type="text" id="encryptionKey" placeholder="Genera o escribe una clave de al menos 32 caracteres"
+                    class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono">
+                  <button type="button" id="btnCopyKey" class="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition flex items-center whitespace-nowrap">
+                    <span id="copyKeyText">📋 Copiar</span>
+                  </button>
+                </div>
+
+                <div class="flex items-center justify-between">
+                  <button type="button" id="btnGenEncKey" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center whitespace-nowrap">
+                    🔑 Generar clave segura
+                  </button>
+                </div>
+
+                <div class="flex items-start space-x-2.5 pt-1">
+                  <input type="checkbox" id="confirmKeyCopied" class="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer">
+                  <label for="confirmKeyCopied" class="text-xs text-slate-300 select-none cursor-pointer">
+                    Confirmé que copié y guardé la ENCRYPTION_KEY en un lugar seguro
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
             <svg class="w-5 h-5 text-clip-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
             </svg>
@@ -224,6 +280,23 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         </div>
       </div>
 
+      <div id="encryptionNoticeBox" class="hidden bg-amber-950/40 border border-amber-500/40 rounded-xl p-4 text-left mb-6">
+        <div class="flex items-start space-x-3">
+          <svg class="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div class="flex-1">
+            <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider mb-1">Configuración Requerida de ENCRYPTION_KEY</h4>
+            <p class="text-xs text-slate-300 mb-2">
+              Configura esta clave como variable de entorno en tu servidor/Docker/Coolify para habilitar el cifrado seguro:
+            </p>
+            <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-amber-200 break-all select-all flex items-center justify-between">
+              <span id="envVarCode">ENCRYPTION_KEY=...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
         <a href="/_/" class="w-full sm:w-auto px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-semibold rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
           <span>Ir a PocketBase Admin UI</span>
@@ -249,6 +322,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       const identityInput = document.getElementById('identity');
       const passwordInput = document.getElementById('password');
+      const encryptionKeyInput = document.getElementById('encryptionKey');
       const clipApiKeyInput = document.getElementById('clipApiKey');
       const pocketbaseUrlInput = document.getElementById('pocketbaseUrl');
       const webhookSecretInput = document.getElementById('webhookSecret');
@@ -257,6 +331,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       const togglePasswordBtn = document.getElementById('togglePasswordBtn');
       const toggleApiKeyBtn = document.getElementById('toggleApiKeyBtn');
+      const btnGenEncKey = document.getElementById('btnGenEncKey');
       const btnGenUuid = document.getElementById('btnGenUuid');
       const btnSubmit = document.getElementById('btnSubmit');
       const btnSubmitText = document.getElementById('btnSubmitText');
@@ -265,6 +340,33 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       const finalWebhookUrlInput = document.getElementById('finalWebhookUrl');
       const btnCopyWebhook = document.getElementById('btnCopyWebhook');
       const copyText = document.getElementById('copyText');
+      const encryptionNoticeBox = document.getElementById('encryptionNoticeBox');
+      const envVarCode = document.getElementById('envVarCode');
+
+      const encKeyServerNotice = document.getElementById('encKeyServerNotice');
+      const encKeyFormContainer = document.getElementById('encKeyFormContainer');
+      const btnCopyKey = document.getElementById('btnCopyKey');
+      const copyKeyText = document.getElementById('copyKeyText');
+      const confirmKeyCopied = document.getElementById('confirmKeyCopied');
+
+      let hasServerKey = false;
+
+      function updateSubmitButtonState() {
+        if (hasServerKey) {
+          btnSubmit.disabled = false;
+          btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+          const isChecked = confirmKeyCopied ? confirmKeyCopied.checked : false;
+          const keyVal = encryptionKeyInput ? encryptionKeyInput.value.trim() : '';
+          const isValidKey = keyVal.length >= 32;
+          btnSubmit.disabled = !(isChecked && isValidKey);
+          if (btnSubmit.disabled) {
+            btnSubmit.classList.add('opacity-50', 'cursor-not-allowed');
+          } else {
+            btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
+          }
+        }
+      }
 
       function showAlert(message, type = 'error') {
         alertBox.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-800', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-800', 'text-emerald-200');
@@ -282,7 +384,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       }
 
       function updateWebhookPreview() {
-        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\\/+$/, '');
+        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\/+$/, '');
         let secret = (webhookSecretInput.value || '').trim();
         let preview = baseUrl + '/api/clip/webhook?token=' + encodeURIComponent(secret);
         webhookPreview.textContent = preview;
@@ -312,6 +414,59 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       setupTogglePassword(passwordInput, togglePasswordBtn);
       setupTogglePassword(clipApiKeyInput, toggleApiKeyBtn);
+
+      function generateEncryptionKey() {
+        let chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let key = '';
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          let bytes = new Uint8Array(32);
+          crypto.getRandomValues(bytes);
+          for (let i = 0; i < 32; i++) {
+            key += chars[bytes[i] % chars.length];
+          }
+        } else {
+          for (let i = 0; i < 32; i++) {
+            key += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+        }
+        if (encryptionKeyInput) {
+          encryptionKeyInput.value = key;
+        }
+        updateSubmitButtonState();
+      }
+
+      if (btnGenEncKey) {
+        btnGenEncKey.addEventListener('click', generateEncryptionKey);
+      }
+
+      if (btnCopyKey) {
+        btnCopyKey.addEventListener('click', async () => {
+          const text = encryptionKeyInput ? encryptionKeyInput.value : '';
+          if (!text) return;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+            } else {
+              encryptionKeyInput.select();
+              document.execCommand('copy');
+            }
+            if (copyKeyText) copyKeyText.textContent = '¡Copiado!';
+            setTimeout(() => {
+              if (copyKeyText) copyKeyText.textContent = '📋 Copiar';
+            }, 2500);
+          } catch (err) {
+            console.error('Failed to copy key: ', err);
+          }
+        });
+      }
+
+      if (confirmKeyCopied) {
+        confirmKeyCopied.addEventListener('change', updateSubmitButtonState);
+      }
+
+      if (encryptionKeyInput) {
+        encryptionKeyInput.addEventListener('input', updateSubmitButtonState);
+      }
 
       pocketbaseUrlInput.addEventListener('input', updateWebhookPreview);
       webhookSecretInput.addEventListener('input', updateWebhookPreview);
@@ -358,6 +513,20 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               pocketbaseUrlInput.value = data.pocketbase_url_suggestion;
               updateWebhookPreview();
             }
+
+            hasServerKey = Boolean(data.has_encryption_key);
+            if (hasServerKey) {
+              if (encKeyServerNotice) encKeyServerNotice.classList.remove('hidden');
+              if (encKeyFormContainer) encKeyFormContainer.classList.add('hidden');
+            } else {
+              if (encKeyServerNotice) encKeyServerNotice.classList.add('hidden');
+              if (encKeyFormContainer) encKeyFormContainer.classList.remove('hidden');
+              if (encryptionKeyInput && (!encryptionKeyInput.value || encryptionKeyInput.value.length < 32)) {
+                generateEncryptionKey();
+              }
+            }
+            updateSubmitButtonState();
+
             if (data.is_configured) {
               alreadyConfiguredBanner.classList.remove('hidden');
               formCard.classList.add('hidden');
@@ -374,10 +543,22 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
         const identity = identityInput.value.trim();
         const password = passwordInput.value;
+        const encryption_key = encryptionKeyInput ? encryptionKeyInput.value.trim() : "";
         const clip_api_key = clipApiKeyInput.value.trim();
         const pocketbase_url = pocketbaseUrlInput.value.trim();
         const clip_webhook_secret = webhookSecretInput.value.trim();
         const admin_user_ids = adminUserIdsInput.value.trim();
+
+        if (!hasServerKey) {
+          if (!encryption_key || encryption_key.length < 32) {
+            showAlert('La ENCRYPTION_KEY es obligatoria y debe tener al menos 32 caracteres.');
+            return;
+          }
+          if (!confirmKeyCopied || !confirmKeyCopied.checked) {
+            showAlert('Debes confirmar que copiaste y guardaste la ENCRYPTION_KEY en un lugar seguro.');
+            return;
+          }
+        }
 
         if (!clip_api_key || clip_api_key.length < 20) {
           showAlert('La Clip API Key debe tener al menos 20 caracteres.');
@@ -392,6 +573,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           const payload = {
             identity,
             password,
+            encryption_key,
             clip_api_key,
             pocketbase_url,
             clip_webhook_secret,
@@ -412,12 +594,24 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             btnSubmit.disabled = false;
             btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
             btnSpinner.classList.add('hidden');
+            updateSubmitButtonState();
             return;
           }
 
           formCard.classList.add('hidden');
           alreadyConfiguredBanner.classList.add('hidden');
           finalWebhookUrlInput.value = updateWebhookPreview();
+
+          if (resData.requires_env_setup) {
+            const keyToShow = encryption_key;
+            if (keyToShow && encryptionNoticeBox && envVarCode) {
+              envVarCode.textContent = 'ENCRYPTION_KEY=' + keyToShow;
+              encryptionNoticeBox.classList.remove('hidden');
+            }
+          } else if (encryptionNoticeBox) {
+            encryptionNoticeBox.classList.add('hidden');
+          }
+
           successCard.classList.remove('hidden');
           successCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
@@ -427,6 +621,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           btnSubmit.disabled = false;
           btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
           btnSpinner.classList.add('hidden');
+          updateSubmitButtonState();
         }
       });
 
@@ -453,7 +648,8 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
 
   return e.json(200, {
     is_configured: isConfigured,
-    pocketbase_url_suggestion: pbUrl || ""
+    pocketbase_url_suggestion: pbUrl || "",
+    has_encryption_key: ($os.getenv("ENCRYPTION_KEY") || "").length >= 32
   });
 });
 
@@ -470,6 +666,14 @@ routerAdd("GET", "/setup", (e) => {
 routerAdd("POST", "/api/plugin/setup", (e) => {
   var info = e.requestInfo();
   var body = info.body || {};
+
+  // ── Rate Limiting — protect superuser auth from brute force ──────────────
+  var rl = require(`${__hooks}/rate_limiter.js`);
+  var clientIp = e.realIP ? e.realIP() : "unknown";
+  var rlResult = rl.checkLimit("setup_auth:" + clientIp, 5, 900000); // 5 attempts / 15 min
+  if (!rlResult.allowed) {
+    throw new TooManyRequestsError("Too many setup attempts. Please wait 15 minutes before trying again.");
+  }
 
   // ── Authentication Check ───────────────────────────────────────────────
   var isSuperuser = false;
@@ -501,6 +705,21 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   var clipWebhookSecret = (body.clip_webhook_secret || "").toString().trim();
   var adminUserIds = body.admin_user_ids !== undefined ? body.admin_user_ids.toString().trim() : "";
 
+  // Read encryption key: from $os.getenv first, then from form body
+  var serverEncKey = $os.getenv("ENCRYPTION_KEY") || "";
+  var formEncKey = (body.encryption_key || "").toString().trim();
+  var effectiveEncKey = serverEncKey.length >= 32 ? serverEncKey : formEncKey;
+
+  if (!effectiveEncKey || effectiveEncKey.length < 32) {
+    throw new BadRequestError(
+      "ENCRYPTION_KEY is required and must be at least 32 characters. " +
+      "Generate one using the wizard or set ENCRYPTION_KEY in your environment."
+    );
+  }
+
+  var usingServerKey = serverEncKey.length >= 32;
+  var usingFormKey = !usingServerKey && formEncKey.length >= 32;
+
   if (!clipApiKey || clipApiKey.length < 20) {
     throw new BadRequestError("Invalid clip_api_key. Must be at least 20 characters.");
   }
@@ -509,7 +728,40 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
     throw new BadRequestError("Invalid pocketbase_url. Must start with http:// or https://");
   }
 
-  // ── Upsert Settings ───────────────────────────────────────────────────
+  // ── Max-length validation (DoS protection) ────────────────────────────
+  if (clipApiKey.length > 500)        throw new BadRequestError("clip_api_key exceeds maximum allowed length.");
+  if (pbUrl.length > 2000)            throw new BadRequestError("pocketbase_url exceeds maximum allowed length.");
+  if (clipWebhookSecret.length > 256) throw new BadRequestError("clip_webhook_secret exceeds maximum allowed length.");
+  if (adminUserIds.length > 2000)     throw new BadRequestError("admin_user_ids exceeds maximum allowed length.");
+  if (formEncKey.length > 512)        throw new BadRequestError("encryption_key exceeds maximum allowed length.");
+
+  // ── Encrypted Storage Execution ─────────────────────────────────────────
+  var envHelper = require(`${__hooks}/env_helper.js`);
+  if (usingFormKey) {
+    try {
+      var keyPath = `${$app.dataDir()}/.encryption_key`;
+      $os.writeFile(keyPath, effectiveEncKey, 0o600);
+    } catch (_) {}
+  }
+
+  envHelper.setEnv("clip_api_key", clipApiKey, true);
+  envHelper.setEnv("pocketbase_url", pbUrl, true);
+  if (clipWebhookSecret) {
+    envHelper.setEnv("clip_webhook_secret", clipWebhookSecret, true);
+  }
+
+  // ── Delete Legacy Sensitive Records from plugin_settings ────────────────
+  var sensitiveKeys = ["clip_api_key", "pocketbase_url", "clip_webhook_secret"];
+  for (var i = 0; i < sensitiveKeys.length; i++) {
+    try {
+      var legacyRec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: sensitiveKeys[i] });
+      if (legacyRec) {
+        $app.delete(legacyRec);
+      }
+    } catch (_) {}
+  }
+
+  // ── Upsert Non-Sensitive Settings in plugin_settings ────────────────────
   function upsertSetting(key, val) {
     var col = $app.findCollectionByNameOrId("plugin_settings");
     var rec = null;
@@ -525,11 +777,6 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
     $app.save(rec);
   }
 
-  upsertSetting("clip_api_key", clipApiKey);
-  upsertSetting("pocketbase_url", pbUrl);
-  if (clipWebhookSecret) {
-    upsertSetting("clip_webhook_secret", clipWebhookSecret);
-  }
   if (body.admin_user_ids !== undefined) {
     upsertSetting("admin_user_ids", adminUserIds);
   }
@@ -537,6 +784,9 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
 
   return e.json(200, {
     success: true,
-    message: "Plugin configuration completed successfully."
+    message: "Plugin configuration completed successfully.",
+    can_encrypt: true,
+    requires_env_setup: usingFormKey
+    // NOTE: encryption_key is intentionally NOT returned — it stays client-side only
   });
 });

@@ -4,7 +4,7 @@
 routerAdd("POST", "/api/clip/webhook", (e) => {
   // Validate webhook secret token (DoS protection)
   const psh = require(`${__hooks}/plugin_settings_helper.js`);
-  const webhookSecret = psh.getSetting("clip_webhook_secret", "");
+  const webhookSecret = psh.getEnvOrSetting("CLIP_WEBHOOK_SECRET", "clip_webhook_secret", "");
   if (webhookSecret) {
     const providedToken = (e.requestInfo().query || {})["token"] || "";
     if (!providedToken || providedToken !== webhookSecret) {

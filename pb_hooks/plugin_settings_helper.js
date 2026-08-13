@@ -1,60 +1,39 @@
-/// <reference path="../pb_data/types.d.ts" />
-// ─────────────────────────────────────────────────────────────────────────
-// Plugin Settings Helper — CommonJS module, shared via require().
-//
-// Provides centralized access control for the CLIP + SPEI plugin.
-// Instead of hardcoding _superusers, any project configures its own
-// admin users via the plugin_settings collection in the PocketBase admin UI.
-//
-// Usage in any pb_hooks/*.pb.js file:
-//   const psh = require(`${__hooks}/plugin_settings_helper.js`);
-//
-//   // Check if a user has plugin admin rights
-//   if (!psh.isPluginAdmin(info.auth.id)) throw new ForbiddenError("...");
-//
-//   // Read a config value
-//   const field = psh.getSetting("clip_amount_field", "total");
-//
-// ─── plugin_settings keys used by the plugin ──────────────────────────────
-//   admin_user_ids     — comma-separated user IDs with plugin admin rights.
-//                        These users can access: refund, transactions,
-//                        validate-cep, and force status re-check.
-//                        Superusers (_superusers) always have access.
-//
-//   clip_amount_field  — field name in the reference collection that holds
-//                        the canonical order price (e.g. "total", "price").
-//                        When set, clip_create_link reads the amount from
-//                        the DB instead of trusting the client (SECURE MODE).
-//                        Leave empty to keep backward-compatible client mode.
-// ─────────────────────────────────────────────────────────────────────────
+// pb_hooks/plugin_settings_helper.js
+/**
+ * Plugin Settings Helper Module for PocketBase v0.23+
+ * Safe accessor functions for dynamic plugin configurations and admin verification.
+ *
+ * Provides centralized access control and settings retrieval for both CLIP + SPEI plugin
+ * and general system configurations.
+ */
 
 /**
- * Reads a value from the plugin_settings collection.
- * Returns defaultValue if the key is not found or the collection doesn't exist.
- *
+ * Gets a raw setting value as string.
  * @param {string} key
  * @param {string} [defaultValue=""]
  * @returns {string}
  */
 function getSetting(key, defaultValue) {
+    var fallback = defaultValue !== undefined ? String(defaultValue) : "";
+    if (!key || typeof key !== "string") {
+        return fallback;
+    }
     try {
-        var rec = $app.findFirstRecordByFilter(
-            "plugin_settings",
-            "key = {:key}",
-            { key: key }
-        );
+        var rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: key });
         if (rec) {
             var val = rec.getString("value");
-            return val !== "" ? val : (defaultValue !== undefined ? defaultValue : "");
+            return val !== "" ? val : fallback;
         }
-    } catch (_) {}
-    return defaultValue !== undefined ? defaultValue : "";
+    } catch (_) {
+        // Table or record not found
+    }
+    return fallback;
 }
 
 /**
  * Reads a value from environment variables first.
- * If empty or undefined, reads settingKey from plugin_settings collection.
- * If missing in DB as well, returns defaultValue.
+ * Checks OS environment, then encrypted system settings (z_system_settings_do_not_touch),
+ * and falls back to defaultValue only. (NO plaintext fallback).
  *
  * @param {string} envKey
  * @param {string} settingKey
@@ -62,45 +41,113 @@ function getSetting(key, defaultValue) {
  * @returns {string}
  */
 function getEnvOrSetting(envKey, settingKey, defaultValue) {
+    // Step 1: OS environment variable (highest priority, required for ENCRYPTION_KEY itself)
     if (envKey) {
         var envVal = $os.getenv(envKey);
         if (envVal && envVal.trim() !== "") {
             return envVal;
         }
     }
-    return getSetting(settingKey, defaultValue);
+    // Step 2: Encrypted system settings (z_system_settings_do_not_touch)
+    // This is the ONLY DB storage. ENCRYPTION_KEY must be set for this to work.
+    if (settingKey) {
+        try {
+            var helper = require(`${__hooks}/env_helper.js`);
+            var encVal = helper.getEnv(settingKey);
+            if (encVal !== null && encVal !== undefined && encVal !== "") {
+                return encVal;
+            }
+        } catch (err) {
+            // ENCRYPTION_KEY not configured — this is a hard failure in production
+            // Log the error but don't expose details
+            console.log("[SECURITY] getEnvOrSetting: encrypted store unavailable for key:", settingKey);
+        }
+    }
+    // Step 3: Default value only
+    return defaultValue !== undefined ? defaultValue : "";
 }
 
 /**
- * Returns true if the userId has plugin admin rights, meaning:
- *   1. The user is a _superuser (always has access), OR
- *   2. Their ID appears in plugin_settings key "admin_user_ids"
+ * Gets a setting parsed as boolean.
+ * @param {string} key
+ * @param {boolean} [defaultValue=false]
+ * @returns {boolean}
+ */
+function getSettingBool(key, defaultValue) {
+    var fallback = defaultValue !== undefined ? Boolean(defaultValue) : false;
+    var raw = getSetting(key, "");
+    if (raw === "") {
+        return fallback;
+    }
+    var lower = raw.trim().toLowerCase();
+    if (lower === "true" || lower === "1" || lower === "yes" || lower === "on") {
+        return true;
+    }
+    if (lower === "false" || lower === "0" || lower === "no" || lower === "off") {
+        return false;
+    }
+    return fallback;
+}
+
+/**
+ * Gets a setting parsed as integer.
+ * @param {string} key
+ * @param {number} [defaultValue=0]
+ * @returns {number}
+ */
+function getSettingInt(key, defaultValue) {
+    var fallback = defaultValue !== undefined ? Number(defaultValue) : 0;
+    var raw = getSetting(key, "");
+    if (raw === "") {
+        return fallback;
+    }
+    var parsed = parseInt(raw, 10);
+    return isNaN(parsed) ? fallback : parsed;
+}
+
+/**
+ * Verifies if a user ID is a superuser or listed in plugin_settings.admin_user_ids.
  *
  * @param {string} userId
  * @returns {boolean}
  */
 function isPluginAdmin(userId) {
-    if (!userId) return false;
+    if (!userId || typeof userId !== "string") {
+        return false;
+    }
+    var cleanUserId = userId.trim();
+    if (!cleanUserId) {
+        return false;
+    }
 
-    // Superusers always have admin access
+    // 1. Superuser check
     try {
-        $app.findRecordById("_superusers", userId);
-        return true;
+        var su = $app.findRecordById("_superusers", cleanUserId);
+        if (su) {
+            return true;
+        }
     } catch (_) {}
 
-    // Check the configured admin_user_ids list
-    var adminIds = getSetting("admin_user_ids", "");
-    if (!adminIds) return false;
-
-    var ids = adminIds.split(",");
-    for (var i = 0; i < ids.length; i++) {
-        if (ids[i].trim() === userId) return true;
+    // 2. Plugin setting admin list check
+    var adminIdsStr = getSetting("admin_user_ids", "");
+    if (!adminIdsStr) {
+        return false;
     }
+
+    var ids = adminIdsStr.split(",");
+    for (var i = 0; i < ids.length; i++) {
+        if (ids[i].trim() === cleanUserId) {
+            return true;
+        }
+    }
+
     return false;
 }
 
-module.exports = {
-    getSetting:      getSetting,
+module.exports = Object.freeze({
+    getSetting: getSetting,
     getEnvOrSetting: getEnvOrSetting,
-    isPluginAdmin:   isPluginAdmin,
-};
+    getSettingBool: getSettingBool,
+    getSettingInt: getSettingInt,
+    isPluginAdmin: isPluginAdmin
+});
