@@ -8,7 +8,7 @@
  */
 
 /**
- * Gets a raw setting value as string.
+ * Gets a raw setting value as string from z_system_settings_do_not_touch.
  * @param {string} key
  * @param {string} [defaultValue=""]
  * @returns {string}
@@ -19,13 +19,13 @@ function getSetting(key, defaultValue) {
         return fallback;
     }
     try {
-        var rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: key });
-        if (rec) {
-            var val = rec.getString("value");
-            return val !== "" ? val : fallback;
+        var envHelper = require(`${__hooks}/env_helper.js`);
+        var val = envHelper.getEnv(key);
+        if (val !== null && val !== undefined && val !== "") {
+            return String(val);
         }
     } catch (_) {
-        // Table or record not found
+        // Table or key not found
     }
     return fallback;
 }

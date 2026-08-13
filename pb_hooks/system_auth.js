@@ -93,17 +93,15 @@ function isPluginAdmin(userId) {
         }
     } catch (_) {}
 
-    // 2. Check plugin_settings collection
+    // 2. Check z_system_settings_do_not_touch collection
     try {
-        const rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: "admin_user_ids" });
-        if (rec) {
-            const adminIdsStr = rec.getString("value");
-            if (adminIdsStr) {
-                const ids = adminIdsStr.split(",");
-                for (let i = 0; i < ids.length; i++) {
-                    if (ids[i].trim() === userId) {
-                        return true;
-                    }
+        const { getEnv } = require(`${__hooks}/env_helper.js`);
+        const adminIdsStr = getEnv("admin_user_ids");
+        if (adminIdsStr) {
+            const ids = adminIdsStr.split(",");
+            for (let i = 0; i < ids.length; i++) {
+                if (ids[i].trim() === userId) {
+                    return true;
                 }
             }
         }

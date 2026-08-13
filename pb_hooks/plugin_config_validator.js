@@ -52,8 +52,8 @@ function printConfigBanner(errors, warnings) {
   console.log("    export CLIP_API_KEY=\"Basic <your_clip_token>\"");
   console.log("    export POCKETBASE_URL=\"https://your-pocketbase-domain.com\"");
   console.log("");
-  console.log("  PocketBase Admin UI → plugin_settings collection:");
-  console.log("    clip_webhook_secret  →  set to a random UUID");
+  console.log("  PocketBase Admin UI → z_system_settings_do_not_touch collection (or /setup):");
+  console.log("    clip_webhook_secret  →  set to a random UUID / token");
   console.log("    admin_user_ids       →  comma-separated user IDs");
   console.log("");
   console.log("  PocketBase Admin UI → spei_settings collection:");

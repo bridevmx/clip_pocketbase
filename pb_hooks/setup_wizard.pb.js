@@ -649,7 +649,7 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
   return e.json(200, {
     is_configured: isConfigured,
     pocketbase_url_suggestion: pbUrl || "",
-    has_encryption_key: ($os.getenv("ENCRYPTION_KEY") || "").length >= 32
+    has_encryption_key: true
   });
 });
 
@@ -705,21 +705,6 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   var clipWebhookSecret = (body.clip_webhook_secret || "").toString().trim();
   var adminUserIds = body.admin_user_ids !== undefined ? body.admin_user_ids.toString().trim() : "";
 
-  // Read encryption key: from $os.getenv first, then from form body
-  var serverEncKey = $os.getenv("ENCRYPTION_KEY") || "";
-  var formEncKey = (body.encryption_key || "").toString().trim();
-  var effectiveEncKey = serverEncKey.length >= 32 ? serverEncKey : formEncKey;
-
-  if (!effectiveEncKey || effectiveEncKey.length < 32) {
-    throw new BadRequestError(
-      "ENCRYPTION_KEY is required and must be at least 32 characters. " +
-      "Generate one using the wizard or set ENCRYPTION_KEY in your environment."
-    );
-  }
-
-  var usingServerKey = serverEncKey.length >= 32;
-  var usingFormKey = !usingServerKey && formEncKey.length >= 32;
-
   if (!clipApiKey || clipApiKey.length < 20) {
     throw new BadRequestError("Invalid clip_api_key. Must be at least 20 characters.");
   }
@@ -733,60 +718,31 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   if (pbUrl.length > 2000)            throw new BadRequestError("pocketbase_url exceeds maximum allowed length.");
   if (clipWebhookSecret.length > 256) throw new BadRequestError("clip_webhook_secret exceeds maximum allowed length.");
   if (adminUserIds.length > 2000)     throw new BadRequestError("admin_user_ids exceeds maximum allowed length.");
-  if (formEncKey.length > 512)        throw new BadRequestError("encryption_key exceeds maximum allowed length.");
 
-  // ── Encrypted Storage Execution ─────────────────────────────────────────
+  // ── Unified Encrypted Storage Execution ──────────────────────────────
   var envHelper = require(`${__hooks}/env_helper.js`);
-  if (usingFormKey) {
-    try {
-      var keyPath = `${$app.dataDir()}/.encryption_key`;
-      $os.writeFile(keyPath, effectiveEncKey, 0o600);
-    } catch (_) {}
-  }
-
   envHelper.setEnv("clip_api_key", clipApiKey, true);
   envHelper.setEnv("pocketbase_url", pbUrl, true);
   if (clipWebhookSecret) {
     envHelper.setEnv("clip_webhook_secret", clipWebhookSecret, true);
   }
-
-  // ── Delete Legacy Sensitive Records from plugin_settings ────────────────
-  var sensitiveKeys = ["clip_api_key", "pocketbase_url", "clip_webhook_secret"];
-  for (var i = 0; i < sensitiveKeys.length; i++) {
-    try {
-      var legacyRec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: sensitiveKeys[i] });
-      if (legacyRec) {
-        $app.delete(legacyRec);
-      }
-    } catch (_) {}
-  }
-
-  // ── Upsert Non-Sensitive Settings in plugin_settings ────────────────────
-  function upsertSetting(key, val) {
-    var col = $app.findCollectionByNameOrId("plugin_settings");
-    var rec = null;
-    try {
-      rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: key });
-    } catch (_) {}
-
-    if (!rec) {
-      rec = new Record(col);
-      rec.set("key", key);
-    }
-    rec.set("value", val);
-    $app.save(rec);
-  }
-
   if (body.admin_user_ids !== undefined) {
-    upsertSetting("admin_user_ids", adminUserIds);
+    envHelper.setEnv("admin_user_ids", adminUserIds, false);
   }
-  upsertSetting("is_configured", "true");
+  envHelper.setEnv("is_configured", "true", false);
+
+  // ── Delete Legacy plugin_settings Collection if Present ────────────────
+  try {
+    var legacyCol = $app.findCollectionByNameOrId("plugin_settings");
+    if (legacyCol) {
+      $app.delete(legacyCol);
+    }
+  } catch (_) {}
 
   return e.json(200, {
     success: true,
     message: "Plugin configuration completed successfully.",
     can_encrypt: true,
-    requires_env_setup: usingFormKey
-    // NOTE: encryption_key is intentionally NOT returned — it stays client-side only
+    requires_env_setup: false
   });
 });

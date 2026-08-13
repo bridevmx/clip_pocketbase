@@ -135,40 +135,32 @@
         console.log("[BOOTSTRAP ERROR] Failed to query pending migrations:", migListErr.message);
     }
 
-    // Auto-migrate plaintext plugin_settings to encrypted z_system_settings
+    // Auto-migrate all settings from legacy plugin_settings to z_system_settings and drop legacy collection
     (function autoMigratePlaintextSettings() {
-        var SENSITIVE_KEYS = ["clip_api_key", "pocketbase_url", "clip_webhook_secret"];
-        var SENTINEL = "[ENCRYPTED:z_system_settings]";
-
         try {
             var envHelper = require(`${__hooks}/env_helper.js`);
-        } catch (err) {
-            console.log("[BOOTSTRAP] env_helper not available, skipping migration:", err.message);
-            return;
-        }
-
-        for (var i = 0; i < SENSITIVE_KEYS.length; i++) {
-            var key = SENSITIVE_KEYS[i];
+            var legacyCol = null;
             try {
-                var psRec = null;
-                try {
-                    psRec = $app.findFirstRecordByFilter("plugin_settings", "key = {:k}", { k: key });
-                } catch (_) { continue; }
+                legacyCol = $app.findCollectionByNameOrId("plugin_settings");
+            } catch (_) {}
 
-                if (!psRec) continue;
-                var currentVal = psRec.getString("value");
-
-                if (currentVal && currentVal !== SENTINEL && currentVal !== "[ENCRYPTED]") {
-                    envHelper.setEnv(key, currentVal, true);
-                    console.log("[BOOTSTRAP] Migrated key to encrypted store:", key);
+            if (legacyCol) {
+                var records = $app.findAllRecords("plugin_settings");
+                for (var i = 0; i < records.length; i++) {
+                    var r = records[i];
+                    var k = r.getString("key");
+                    var v = r.getString("value");
+                    if (k && v && v !== "[ENCRYPTED:z_system_settings]" && v !== "[ENCRYPTED]") {
+                        var isSensitive = (k === "clip_api_key" || k === "pocketbase_url" || k === "clip_webhook_secret");
+                        envHelper.setEnv(k, v, isSensitive);
+                        console.log("[BOOTSTRAP] Migrated setting from plugin_settings to z_system_settings:", k);
+                    }
                 }
-
-                $app.delete(psRec);
-                console.log("[BOOTSTRAP] Deleted legacy record from plugin_settings for key:", key);
-
-            } catch (migErr) {
-                console.log("[BOOTSTRAP] Migration error for key:", key, "-", migErr.message);
+                $app.delete(legacyCol);
+                console.log("[BOOTSTRAP] Legacy plugin_settings collection dropped successfully.");
             }
+        } catch (migErr) {
+            console.log("[BOOTSTRAP] Legacy migration warning:", migErr.message);
         }
     })();
 });
