@@ -8,119 +8,6 @@
 //   POST /api/plugin/setup         — Save configuration (Superuser auth)
 // ─────────────────────────────────────────────────────────────────────────
 
-routerAdd("GET", "/api/plugin/setup-status", (e) => {
-  var psh = require(`${__hooks}/plugin_settings_helper.js`);
-  var isConfigured = psh.getSetting("is_configured", "false") === "true";
-
-  var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
-  if (!pbUrl) {
-    var reqInfo = e.requestInfo();
-    var headers = reqInfo ? (reqInfo.headers || {}) : {};
-    var host = headers["host"] || (e.request && e.request.header ? e.request.header.get("Host") : "");
-    if (host) {
-      var proto = headers["x-forwarded-proto"] || (e.request && e.request.header ? e.request.header.get("X-Forwarded-Proto") : "http");
-      pbUrl = proto + "://" + host;
-    }
-  }
-
-  return e.json(200, {
-    is_configured: isConfigured,
-    pocketbase_url_suggestion: pbUrl || ""
-  });
-});
-
-routerAdd("GET", "/setup", (e) => {
-  // Try serving via e.file first
-  var paths = [
-    "pb_public/setup.html",
-    "../pb_public/setup.html",
-    "/pb/pb_public/setup.html"
-  ];
-
-  for (var i = 0; i < paths.length; i++) {
-    try {
-      return e.file(paths[i]);
-    } catch (_) {}
-  }
-
-  // Fallback embedded HTML if file is not found on disk
-  return e.html(200, SETUP_HTML_EMBEDDED);
-});
-
-routerAdd("POST", "/api/plugin/setup", (e) => {
-  var info = e.requestInfo();
-  var body = info.body || {};
-
-  // ── Authentication Check ───────────────────────────────────────────────
-  var isSuperuser = false;
-
-  if (e.hasSuperuserAuth()) {
-    isSuperuser = true;
-  } else if (body.identity && body.password) {
-    var adminRecord = null;
-    try {
-      adminRecord = $app.findAuthRecordByEmail("_superusers", body.identity.toString());
-    } catch (_) {
-      try {
-        adminRecord = $app.findAuthRecordByUsername("_superusers", body.identity.toString());
-      } catch (_) {}
-    }
-
-    if (adminRecord && $app.validatePassword(adminRecord, body.password.toString())) {
-      isSuperuser = true;
-    }
-  }
-
-  if (!isSuperuser) {
-    throw new ForbiddenError("Superuser authentication required.");
-  }
-
-  // ── Input Validation ───────────────────────────────────────────────────
-  var clipApiKey = (body.clip_api_key || "").toString().trim();
-  var pbUrl = (body.pocketbase_url || "").toString().trim();
-  var clipWebhookSecret = (body.clip_webhook_secret || "").toString().trim();
-  var adminUserIds = body.admin_user_ids !== undefined ? body.admin_user_ids.toString().trim() : "";
-
-  if (!clipApiKey || clipApiKey.length < 20) {
-    throw new BadRequestError("Invalid clip_api_key. Must be at least 20 characters.");
-  }
-
-  if (!pbUrl || (!pbUrl.startsWith("http://") && !pbUrl.startsWith("https://"))) {
-    throw new BadRequestError("Invalid pocketbase_url. Must start with http:// or https://");
-  }
-
-  // ── Upsert Settings ───────────────────────────────────────────────────
-  function upsertSetting(key, val) {
-    var col = $app.findCollectionByNameOrId("plugin_settings");
-    var rec = null;
-    try {
-      rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: key });
-    } catch (_) {}
-
-    if (!rec) {
-      rec = new Record(col);
-      rec.set("key", key);
-    }
-    rec.set("value", val);
-    $app.save(rec);
-  }
-
-  upsertSetting("clip_api_key", clipApiKey);
-  upsertSetting("pocketbase_url", pbUrl);
-  if (clipWebhookSecret) {
-    upsertSetting("clip_webhook_secret", clipWebhookSecret);
-  }
-  if (body.admin_user_ids !== undefined) {
-    upsertSetting("admin_user_ids", adminUserIds);
-  }
-  upsertSetting("is_configured", "true");
-
-  return e.json(200, {
-    success: true,
-    message: "Plugin configuration completed successfully."
-  });
-});
-
 var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 <html lang="es" class="h-full bg-slate-950">
 <head>
@@ -330,7 +217,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           <input type="text" id="finalWebhookUrl" readonly class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 focus:outline-none select-all" />
           <button type="button" id="btnCopyWebhook" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg transition whitespace-nowrap flex items-center space-x-1">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
             </svg>
             <span id="copyText">Copiar</span>
           </button>
@@ -548,3 +435,116 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+
+routerAdd("GET", "/api/plugin/setup-status", (e) => {
+  var psh = require(`${__hooks}/plugin_settings_helper.js`);
+  var isConfigured = psh.getSetting("is_configured", "false") === "true";
+
+  var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
+  if (!pbUrl) {
+    var reqInfo = e.requestInfo();
+    var headers = reqInfo ? (reqInfo.headers || {}) : {};
+    var host = headers["host"] || (e.request && e.request.header ? e.request.header.get("Host") : "");
+    if (host) {
+      var proto = headers["x-forwarded-proto"] || (e.request && e.request.header ? e.request.header.get("X-Forwarded-Proto") : "http");
+      pbUrl = proto + "://" + host;
+    }
+  }
+
+  return e.json(200, {
+    is_configured: isConfigured,
+    pocketbase_url_suggestion: pbUrl || ""
+  });
+});
+
+routerAdd("GET", "/setup", (e) => {
+  // Try serving via e.file first
+  var paths = [
+    "pb_public/setup.html",
+    "../pb_public/setup.html",
+    "/pb/pb_public/setup.html"
+  ];
+
+  for (var i = 0; i < paths.length; i++) {
+    try {
+      return e.file(paths[i]);
+    } catch (_) {}
+  }
+
+  // Fallback embedded HTML if file is not found on disk
+  return e.html(200, SETUP_HTML_EMBEDDED);
+});
+
+routerAdd("POST", "/api/plugin/setup", (e) => {
+  var info = e.requestInfo();
+  var body = info.body || {};
+
+  // ── Authentication Check ───────────────────────────────────────────────
+  var isSuperuser = false;
+
+  if (e.hasSuperuserAuth()) {
+    isSuperuser = true;
+  } else if (body.identity && body.password) {
+    var adminRecord = null;
+    try {
+      adminRecord = $app.findAuthRecordByEmail("_superusers", body.identity.toString());
+    } catch (_) {
+      try {
+        adminRecord = $app.findAuthRecordByUsername("_superusers", body.identity.toString());
+      } catch (_) {}
+    }
+
+    if (adminRecord && $app.validatePassword(adminRecord, body.password.toString())) {
+      isSuperuser = true;
+    }
+  }
+
+  if (!isSuperuser) {
+    throw new ForbiddenError("Superuser authentication required.");
+  }
+
+  // ── Input Validation ───────────────────────────────────────────────────
+  var clipApiKey = (body.clip_api_key || "").toString().trim();
+  var pbUrl = (body.pocketbase_url || "").toString().trim();
+  var clipWebhookSecret = (body.clip_webhook_secret || "").toString().trim();
+  var adminUserIds = body.admin_user_ids !== undefined ? body.admin_user_ids.toString().trim() : "";
+
+  if (!clipApiKey || clipApiKey.length < 20) {
+    throw new BadRequestError("Invalid clip_api_key. Must be at least 20 characters.");
+  }
+
+  if (!pbUrl || (!pbUrl.startsWith("http://") && !pbUrl.startsWith("https://"))) {
+    throw new BadRequestError("Invalid pocketbase_url. Must start with http:// or https://");
+  }
+
+  // ── Upsert Settings ───────────────────────────────────────────────────
+  function upsertSetting(key, val) {
+    var col = $app.findCollectionByNameOrId("plugin_settings");
+    var rec = null;
+    try {
+      rec = $app.findFirstRecordByFilter("plugin_settings", "key = {:key}", { key: key });
+    } catch (_) {}
+
+    if (!rec) {
+      rec = new Record(col);
+      rec.set("key", key);
+    }
+    rec.set("value", val);
+    $app.save(rec);
+  }
+
+  upsertSetting("clip_api_key", clipApiKey);
+  upsertSetting("pocketbase_url", pbUrl);
+  if (clipWebhookSecret) {
+    upsertSetting("clip_webhook_secret", clipWebhookSecret);
+  }
+  if (body.admin_user_ids !== undefined) {
+    upsertSetting("admin_user_ids", adminUserIds);
+  }
+  upsertSetting("is_configured", "true");
+
+  return e.json(200, {
+    success: true,
+    message: "Plugin configuration completed successfully."
+  });
+});
