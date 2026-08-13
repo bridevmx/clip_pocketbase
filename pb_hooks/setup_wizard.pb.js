@@ -458,20 +458,12 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
 });
 
 routerAdd("GET", "/setup", (e) => {
-  // Try serving via e.file first
-  var paths = [
-    "pb_public/setup.html",
-    "../pb_public/setup.html",
-    "/pb/pb_public/setup.html"
-  ];
+  // Use PocketBase v0.23+ native fileFS API to serve setup.html
+  try {
+    return e.fileFS($os.dirFS("./pb_public"), "setup.html");
+  } catch (_) {}
 
-  for (var i = 0; i < paths.length; i++) {
-    try {
-      return e.file(paths[i]);
-    } catch (_) {}
-  }
-
-  // Fallback embedded HTML if file is not found on disk
+  // Fallback to embedded HTML if pb_public/setup.html is missing or inaccessible
   return e.html(200, SETUP_HTML_EMBEDDED);
 });
 
