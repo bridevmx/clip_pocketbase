@@ -34,6 +34,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 <body class="h-full bg-slate-950 text-slate-100 antialiased font-sans min-h-screen flex flex-col justify-between py-10 px-4 sm:px-6 lg:px-8">
   
   <div class="sm:mx-auto sm:w-full sm:max-w-xl">
+    <!-- Header Logo & Title -->
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center space-x-3 bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800 shadow-xl mb-4">
         <span class="text-2xl font-bold text-clip-500 tracking-wider">CLIP</span>
@@ -48,6 +49,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       </p>
     </div>
 
+    <!-- Status Banner (Shown if already configured) -->
     <div id="alreadyConfiguredBanner" class="hidden mb-6 bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
       <div class="flex items-start space-x-4">
         <div class="flex-shrink-0 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-emerald-400">
@@ -75,10 +77,14 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Global Alert Box -->
     <div id="alertBox" role="alert" class="hidden mb-6 rounded-xl p-4 text-sm font-medium transition-all"></div>
 
+    <!-- Main Setup Form Card -->
     <div id="formCard" class="bg-slate-900/80 border border-slate-800 shadow-2xl rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
       <form id="setupForm" class="space-y-6">
+        
+        <!-- Section 1: Superuser Credentials -->
         <div>
           <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
             <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,62 +121,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           </div>
         </div>
 
-        <div>
-          <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
-            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            <h2 class="text-base font-semibold text-slate-200">Seguridad y Cifrado</h2>
-          </div>
-
-          <div class="space-y-4">
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                ENCRYPTION_KEY (Clave Maestra de Cifrado)
-              </label>
-
-              <!-- Shown when has_encryption_key === true -->
-              <div id="encKeyServerNotice" class="hidden p-4 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-medium space-y-1">
-                <div class="flex items-center space-x-2 font-bold text-emerald-400 text-sm">
-                  <span>✓ Configurada en el entorno del servidor</span>
-                </div>
-                <p class="text-slate-300">Las credenciales de Clip y SPEI se cifrarán automáticamente en reposo.</p>
-              </div>
-
-              <!-- Shown when has_encryption_key === false -->
-              <div id="encKeyFormContainer" class="space-y-3">
-                <div class="p-3.5 bg-amber-950/50 border border-amber-500/40 rounded-xl text-xs text-amber-300 space-y-1">
-                  <div class="font-bold text-amber-400">⚠️ No se detectó ENCRYPTION_KEY en el servidor</div>
-                  <p class="text-slate-300">
-                    El wizard generará una clave segura. <strong class="text-amber-300 font-semibold">DEBES copiarla y configurarla como variable de entorno antes de reiniciar PocketBase.</strong>
-                  </p>
-                </div>
-
-                <div class="flex space-x-2">
-                  <input type="text" id="encryptionKey" placeholder="Genera o escribe una clave de al menos 32 caracteres"
-                    class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono">
-                  <button type="button" id="btnCopyKey" class="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition flex items-center whitespace-nowrap">
-                    <span id="copyKeyText">📋 Copiar</span>
-                  </button>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <button type="button" id="btnGenEncKey" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center whitespace-nowrap">
-                    🔑 Generar clave segura
-                  </button>
-                </div>
-
-                <div class="flex items-start space-x-2.5 pt-1">
-                  <input type="checkbox" id="confirmKeyCopied" class="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer">
-                  <label for="confirmKeyCopied" class="text-xs text-slate-300 select-none cursor-pointer">
-                    Confirmé que copié y guardé la ENCRYPTION_KEY en un lugar seguro
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        <!-- Section 2: Clip Integration Settings -->
         <div>
           <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
             <svg class="w-5 h-5 text-clip-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -180,6 +131,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           </div>
 
           <div class="space-y-4">
+            <!-- Clip API Key -->
             <div>
               <label for="clipApiKey" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Clip API Key (Basic Auth) <span class="text-rose-400">*</span>
@@ -198,6 +150,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               <p class="mt-1 text-xs text-slate-500">Formato Basic &lt;token&gt; obtenido desde el Dashboard Developer de Clip.</p>
             </div>
 
+            <!-- PocketBase Base URL -->
             <div>
               <label for="pocketbaseUrl" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 PocketBase URL pública <span class="text-rose-400">*</span>
@@ -207,6 +160,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               <p class="mt-1 text-xs text-slate-500">URL base donde se encuentra escuchando PocketBase.</p>
             </div>
 
+            <!-- Webhook Secret Token -->
             <div>
               <label for="webhookSecret" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Webhook Secret Token <span class="text-rose-400">*</span>
@@ -220,6 +174,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               </div>
             </div>
 
+            <!-- Webhook URL Interactive Preview -->
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
               <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Vista Previa de URL de Webhook:</div>
               <div id="webhookPreview" class="text-xs font-mono text-indigo-300 break-all select-all">
@@ -227,6 +182,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               </div>
             </div>
 
+            <!-- Admin User IDs (Optional) -->
             <div>
               <label for="adminUserIds" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Admin User IDs de PocketBase <span class="text-slate-500 font-normal lowercase">(opcional)</span>
@@ -238,9 +194,39 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
                 <span class="text-slate-400">Nota: Los superusuarios de PocketBase ya cuentan con acceso total implícito.</span>
               </p>
             </div>
+
+            <!-- Security Key / Passphrase (Optional for PaaS / Coolify automated redeploys) -->
+            <div class="border-t border-slate-800/80 pt-4">
+              <label for="securityKey" class="block text-xs font-semibold uppercase tracking-wider text-amber-400/90 mb-1.5 flex items-center space-x-1.5">
+                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Clave de Seguridad (SECURITY_KEY) <span class="text-slate-500 font-normal lowercase">(opcional / recomendado PaaS)</span></span>
+              </label>
+              <div class="flex space-x-2">
+                <div class="relative flex-1">
+                  <input type="password" id="securityKey" placeholder="Dejar vacío para auto-generar en disco"
+                    class="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-3.5 pr-10 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition font-mono">
+                  <button type="button" id="toggleSecurityKeyBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
+                    <span class="sr-only">Mostrar u ocultar clave</span>
+                    <svg id="eyeIcon3" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </button>
+                </div>
+                <button type="button" id="btnGenSecKey" class="px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-xl transition flex items-center whitespace-nowrap">
+                  🎲 Generar Clave
+                </button>
+              </div>
+              <p class="mt-1.5 text-xs text-slate-500">
+                Si defines una clave, se utilizará para cifrar la clave maestra en disco. Puedes agregar <code class="text-amber-300/90 font-mono">SECURITY_KEY</code> en tu panel de Coolify para reinicios desatendidos en caliente.
+              </p>
+            </div>
           </div>
         </div>
 
+        <!-- Submit Button -->
         <div class="pt-2">
           <button type="submit" id="btnSubmit" class="w-full bg-gradient-to-r from-clip-500 to-indigo-600 hover:from-clip-600 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg hover:shadow-indigo-500/20 transition-all flex items-center justify-center space-x-2">
             <span id="btnSubmitText">Guardar y Finalizar Configuración</span>
@@ -250,9 +236,11 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             </svg>
           </button>
         </div>
+
       </form>
     </div>
 
+    <!-- Success Congratulations Modal / Card -->
     <div id="successCard" class="hidden bg-slate-900 border border-emerald-500/50 shadow-2xl rounded-2xl p-6 sm:p-8 backdrop-blur-sm text-center">
       <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400">
         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -273,27 +261,10 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           <input type="text" id="finalWebhookUrl" readonly class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 focus:outline-none select-all" />
           <button type="button" id="btnCopyWebhook" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg transition whitespace-nowrap flex items-center space-x-1">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
             </svg>
             <span id="copyText">Copiar</span>
           </button>
-        </div>
-      </div>
-
-      <div id="encryptionNoticeBox" class="hidden bg-amber-950/40 border border-amber-500/40 rounded-xl p-4 text-left mb-6">
-        <div class="flex items-start space-x-3">
-          <svg class="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div class="flex-1">
-            <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider mb-1">Configuración Requerida de ENCRYPTION_KEY</h4>
-            <p class="text-xs text-slate-300 mb-2">
-              Configura esta clave como variable de entorno en tu servidor/Docker/Coolify para habilitar el cifrado seguro:
-            </p>
-            <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-amber-200 break-all select-all flex items-center justify-between">
-              <span id="envVarCode">ENCRYPTION_KEY=...</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -306,14 +277,17 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         </a>
       </div>
     </div>
+
   </div>
 
   <footer class="mt-12 text-center text-xs text-slate-600">
     Clip PocketBase Plugin &bull; Integración Autónoma de Pagos
   </footer>
 
+  <!-- Client-side Logic Script -->
   <script>
     (function () {
+      // DOM Elements
       const setupForm = document.getElementById('setupForm');
       const formCard = document.getElementById('formCard');
       const alreadyConfiguredBanner = document.getElementById('alreadyConfiguredBanner');
@@ -322,17 +296,18 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       const identityInput = document.getElementById('identity');
       const passwordInput = document.getElementById('password');
-      const encryptionKeyInput = document.getElementById('encryptionKey');
       const clipApiKeyInput = document.getElementById('clipApiKey');
       const pocketbaseUrlInput = document.getElementById('pocketbaseUrl');
       const webhookSecretInput = document.getElementById('webhookSecret');
       const adminUserIdsInput = document.getElementById('adminUserIds');
+      const securityKeyInput = document.getElementById('securityKey');
       const webhookPreview = document.getElementById('webhookPreview');
 
       const togglePasswordBtn = document.getElementById('togglePasswordBtn');
       const toggleApiKeyBtn = document.getElementById('toggleApiKeyBtn');
-      const btnGenEncKey = document.getElementById('btnGenEncKey');
+      const toggleSecurityKeyBtn = document.getElementById('toggleSecurityKeyBtn');
       const btnGenUuid = document.getElementById('btnGenUuid');
+      const btnGenSecKey = document.getElementById('btnGenSecKey');
       const btnSubmit = document.getElementById('btnSubmit');
       const btnSubmitText = document.getElementById('btnSubmitText');
       const btnSpinner = document.getElementById('btnSpinner');
@@ -340,34 +315,8 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       const finalWebhookUrlInput = document.getElementById('finalWebhookUrl');
       const btnCopyWebhook = document.getElementById('btnCopyWebhook');
       const copyText = document.getElementById('copyText');
-      const encryptionNoticeBox = document.getElementById('encryptionNoticeBox');
-      const envVarCode = document.getElementById('envVarCode');
 
-      const encKeyServerNotice = document.getElementById('encKeyServerNotice');
-      const encKeyFormContainer = document.getElementById('encKeyFormContainer');
-      const btnCopyKey = document.getElementById('btnCopyKey');
-      const copyKeyText = document.getElementById('copyKeyText');
-      const confirmKeyCopied = document.getElementById('confirmKeyCopied');
-
-      let hasServerKey = false;
-
-      function updateSubmitButtonState() {
-        if (hasServerKey) {
-          btnSubmit.disabled = false;
-          btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
-        } else {
-          const isChecked = confirmKeyCopied ? confirmKeyCopied.checked : false;
-          const keyVal = encryptionKeyInput ? encryptionKeyInput.value.trim() : '';
-          const isValidKey = keyVal.length >= 32;
-          btnSubmit.disabled = !(isChecked && isValidKey);
-          if (btnSubmit.disabled) {
-            btnSubmit.classList.add('opacity-50', 'cursor-not-allowed');
-          } else {
-            btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
-          }
-        }
-      }
-
+      // Helper: Show Alert
       function showAlert(message, type = 'error') {
         alertBox.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-800', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-800', 'text-emerald-200');
         if (type === 'error') {
@@ -383,19 +332,22 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         alertBox.classList.add('hidden');
       }
 
+      // Update Webhook URL Preview
       function updateWebhookPreview() {
-        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\/+$/, '');
+        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\\/+$/, '');
         let secret = (webhookSecretInput.value || '').trim();
-        let preview = baseUrl + '/api/clip/webhook?token=' + encodeURIComponent(secret);
+        let preview = \`\${baseUrl}/api/clip/webhook?token=\${encodeURIComponent(secret)}\`;
         webhookPreview.textContent = preview;
         return preview;
       }
 
+      // Generate UUID4
       function generateUuid() {
         let uuid = '';
         if (typeof crypto !== 'undefined' && crypto.randomUUID) {
           uuid = crypto.randomUUID();
         } else {
+          // Fallback UUID generation
           uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
             const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
@@ -405,6 +357,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         updateWebhookPreview();
       }
 
+      // Password visibility toggle helper
       function setupTogglePassword(inputEl, btnEl) {
         btnEl.addEventListener('click', () => {
           const type = inputEl.getAttribute('type') === 'password' ? 'text' : 'password';
@@ -414,64 +367,27 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       setupTogglePassword(passwordInput, togglePasswordBtn);
       setupTogglePassword(clipApiKeyInput, toggleApiKeyBtn);
-
-      function generateEncryptionKey() {
-        let chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-        let key = '';
-        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-          let bytes = new Uint8Array(32);
-          crypto.getRandomValues(bytes);
-          for (let i = 0; i < 32; i++) {
-            key += chars[bytes[i] % chars.length];
-          }
-        } else {
-          for (let i = 0; i < 32; i++) {
-            key += chars.charAt(Math.floor(Math.random() * chars.length));
-          }
-        }
-        if (encryptionKeyInput) {
-          encryptionKeyInput.value = key;
-        }
-        updateSubmitButtonState();
+      if (toggleSecurityKeyBtn && securityKeyInput) {
+        setupTogglePassword(securityKeyInput, toggleSecurityKeyBtn);
       }
 
-      if (btnGenEncKey) {
-        btnGenEncKey.addEventListener('click', generateEncryptionKey);
-      }
-
-      if (btnCopyKey) {
-        btnCopyKey.addEventListener('click', async () => {
-          const text = encryptionKeyInput ? encryptionKeyInput.value : '';
-          if (!text) return;
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              await navigator.clipboard.writeText(text);
-            } else {
-              encryptionKeyInput.select();
-              document.execCommand('copy');
-            }
-            if (copyKeyText) copyKeyText.textContent = '¡Copiado!';
-            setTimeout(() => {
-              if (copyKeyText) copyKeyText.textContent = '📋 Copiar';
-            }, 2500);
-          } catch (err) {
-            console.error('Failed to copy key: ', err);
-          }
-        });
-      }
-
-      if (confirmKeyCopied) {
-        confirmKeyCopied.addEventListener('change', updateSubmitButtonState);
-      }
-
-      if (encryptionKeyInput) {
-        encryptionKeyInput.addEventListener('input', updateSubmitButtonState);
-      }
-
+      // Event Listeners for Preview Updates
       pocketbaseUrlInput.addEventListener('input', updateWebhookPreview);
       webhookSecretInput.addEventListener('input', updateWebhookPreview);
       btnGenUuid.addEventListener('click', generateUuid);
+      if (btnGenSecKey && securityKeyInput) {
+        btnGenSecKey.addEventListener('click', () => {
+          let key = '';
+          if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            key = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+          } else {
+            key = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16));
+          }
+          securityKeyInput.value = key;
+        });
+      }
 
+      // Reconfigure action
       if (btnReconfigure) {
         btnReconfigure.addEventListener('click', () => {
           formCard.classList.remove('hidden');
@@ -479,6 +395,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         });
       }
 
+      // Copy Webhook URL to clipboard
       btnCopyWebhook.addEventListener('click', async () => {
         const text = finalWebhookUrlInput.value;
         try {
@@ -501,7 +418,9 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         }
       });
 
+      // 1. Initial Load: Check setup status
       async function checkStatus() {
+        // Set default pocketbase URL
         pocketbaseUrlInput.value = window.location.origin;
         generateUuid();
 
@@ -513,20 +432,6 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               pocketbaseUrlInput.value = data.pocketbase_url_suggestion;
               updateWebhookPreview();
             }
-
-            hasServerKey = Boolean(data.has_encryption_key);
-            if (hasServerKey) {
-              if (encKeyServerNotice) encKeyServerNotice.classList.remove('hidden');
-              if (encKeyFormContainer) encKeyFormContainer.classList.add('hidden');
-            } else {
-              if (encKeyServerNotice) encKeyServerNotice.classList.add('hidden');
-              if (encKeyFormContainer) encKeyFormContainer.classList.remove('hidden');
-              if (encryptionKeyInput && (!encryptionKeyInput.value || encryptionKeyInput.value.length < 32)) {
-                generateEncryptionKey();
-              }
-            }
-            updateSubmitButtonState();
-
             if (data.is_configured) {
               alreadyConfiguredBanner.classList.remove('hidden');
               formCard.classList.add('hidden');
@@ -537,34 +442,25 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         }
       }
 
+      // 2. Form Submission Handler
       setupForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         hideAlert();
 
         const identity = identityInput.value.trim();
         const password = passwordInput.value;
-        const encryption_key = encryptionKeyInput ? encryptionKeyInput.value.trim() : "";
         const clip_api_key = clipApiKeyInput.value.trim();
         const pocketbase_url = pocketbaseUrlInput.value.trim();
         const clip_webhook_secret = webhookSecretInput.value.trim();
         const admin_user_ids = adminUserIdsInput.value.trim();
-
-        if (!hasServerKey) {
-          if (!encryption_key || encryption_key.length < 32) {
-            showAlert('La ENCRYPTION_KEY es obligatoria y debe tener al menos 32 caracteres.');
-            return;
-          }
-          if (!confirmKeyCopied || !confirmKeyCopied.checked) {
-            showAlert('Debes confirmar que copiaste y guardaste la ENCRYPTION_KEY en un lugar seguro.');
-            return;
-          }
-        }
+        const security_key = securityKeyInput ? securityKeyInput.value.trim() : "";
 
         if (!clip_api_key || clip_api_key.length < 20) {
           showAlert('La Clip API Key debe tener al menos 20 caracteres.');
           return;
         }
 
+        // Disable button & show spinner
         btnSubmit.disabled = true;
         btnSubmitText.textContent = 'Configurando Plugin...';
         btnSpinner.classList.remove('hidden');
@@ -573,11 +469,11 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           const payload = {
             identity,
             password,
-            encryption_key,
             clip_api_key,
             pocketbase_url,
             clip_webhook_secret,
-            admin_user_ids
+            admin_user_ids,
+            security_key
           };
 
           const response = await fetch('/api/plugin/setup', {
@@ -589,29 +485,18 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           const resData = await response.json().catch(() => ({}));
 
           if (!response.ok) {
-            const errorMsg = resData.message || resData.error || ('Error ' + response.status + ': No se pudo guardar la configuración.');
+            const errorMsg = resData.message || resData.error || \`Error \${response.status}: No se pudo guardar la configuración.\`;
             showAlert(errorMsg, 'error');
             btnSubmit.disabled = false;
             btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
             btnSpinner.classList.add('hidden');
-            updateSubmitButtonState();
             return;
           }
 
+          // Success Flow
           formCard.classList.add('hidden');
           alreadyConfiguredBanner.classList.add('hidden');
           finalWebhookUrlInput.value = updateWebhookPreview();
-
-          if (resData.requires_env_setup) {
-            const keyToShow = encryption_key;
-            if (keyToShow && encryptionNoticeBox && envVarCode) {
-              envVarCode.textContent = 'ENCRYPTION_KEY=' + keyToShow;
-              encryptionNoticeBox.classList.remove('hidden');
-            }
-          } else if (encryptionNoticeBox) {
-            encryptionNoticeBox.classList.add('hidden');
-          }
-
           successCard.classList.remove('hidden');
           successCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
@@ -621,19 +506,19 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           btnSubmit.disabled = false;
           btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
           btnSpinner.classList.add('hidden');
-          updateSubmitButtonState();
         }
       });
 
+      // Run on page load
       checkStatus();
     })();
   </script>
 </body>
-</html>`;
+</html>\`;
 
 routerAdd("GET", "/api/plugin/setup-status", (e) => {
-  var psh = require(`${__hooks}/plugin_settings_helper.js`);
-  var envHelper = require(`${__hooks}/env_helper.js`);
+  var psh = require(\`\${__hooks}/plugin_settings_helper.js\`);
+  var envHelper = require(\`\${__hooks}/env_helper.js\`);
   var isConfigured = psh.getSetting("is_configured", "false") === "true";
 
   var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
@@ -647,13 +532,10 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
     }
   }
 
-  var vaultStatus = envHelper.getVaultStatus();
-
   return e.json(200, {
     is_configured: isConfigured,
     pocketbase_url_suggestion: pbUrl || "",
-    has_encryption_key: vaultStatus.has_env_key,
-    vault_status: vaultStatus
+    vault_status: envHelper.getVaultStatus()
   });
 });
 
@@ -672,7 +554,7 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   var body = info.body || {};
 
   // ── Rate Limiting — protect superuser auth from brute force ──────────────
-  var rl = require(`${__hooks}/rate_limiter.js`);
+  var rl = require(\`\${__hooks}/rate_limiter.js\`);
   var clientIp = e.realIP ? e.realIP() : "unknown";
   var rlResult = rl.checkLimit("setup_auth:" + clientIp, 5, 900000); // 5 attempts / 15 min
   if (!rlResult.allowed) {
@@ -724,10 +606,11 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   if (adminUserIds.length > 2000)     throw new BadRequestError("admin_user_ids exceeds maximum allowed length.");
 
   // ── Unified Encrypted Storage Execution ──────────────────────────────
-  var envHelper = require(`${__hooks}/env_helper.js`);
+  var envHelper = require(\`\${__hooks}/env_helper.js\`);
 
   // Wrap master key if security_key / passphrase is provided
   var secKey = (body.security_key || body.passphrase || body.encryption_key || "").toString().trim();
+  if (secKey.length > 512) throw new BadRequestError("security_key exceeds maximum allowed length.");
   if (secKey) {
     try {
       envHelper.wrapVault(secKey);
@@ -760,7 +643,6 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
     success: true,
     message: "Plugin configuration completed successfully.",
     can_encrypt: true,
-    requires_env_setup: false,
     vault_status: currentVaultStatus
   });
 });

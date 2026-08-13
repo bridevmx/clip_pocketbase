@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (superuser security key + envelope encryption / key wrapping for master key)
+> Last updated: 2026-08-13 (Setup Wizard SECURITY_KEY field + unattended PaaS boot via env var)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -61,6 +61,8 @@
 - [COMPLETE] **Setup Wizard `ENCRYPTION_KEY` Requirement Removed** — `POST /api/plugin/setup` no longer requires `ENCRYPTION_KEY` in the request body; credentials are saved directly to `z_system_settings_do_not_touch` using the auto-generated 124-char master key from `envHelper.getMasterKey()`
 - [COMPLETE] **Envelope Encryption / Key Wrapping (`env_helper.js`)** — master key ($K_M$, 124 chars) is AES-256-GCM wrapped with a superuser passphrase ($K_S$); stored in `pb_data/.encryption_key` as JSON `{ version, wrapped, ciphertext }`; `wrapVault` refuses to regenerate the key if the vault is already wrapped-and-locked; file permissions `0o600`; precedence: disk file beats any env-var fallback
 - [COMPLETE] **Vault Key API Endpoints (`system_vault_api.pb.js`)** — `POST /api/v1/system/vault/unlock` (unlock with passphrase), `POST /api/v1/system/vault/enable-passphrase` (wrap or rotate passphrase, requires re-auth with old key), `GET /api/v1/system/vault/status` (returns `{ wrapped, locked, has_env_key }`); rate-limited 5 attempts/15 min per IP (evaluated before auth); all endpoints require `requireSuperuser(e)`
+- [COMPLETE] **Setup Wizard SECURITY_KEY Field** — optional "Security Key" field added to `pb_public/setup.html` with dynamic 32+ char generator button (`🎲 Generate Key`); if provided, `setup_wizard.pb.js` calls `envHelper.wrapVault(securityKey)` to protect `pb_data/.encryption_key` on disk; `SETUP_HTML_EMBEDDED` template kept 100% in sync with the static file
+- [COMPLETE] **Unattended PaaS Boot via `SECURITY_KEY` env var** — setting `SECURITY_KEY=<key>` in Coolify/Easypanel causes PocketBase to read it on boot, unwrap the 124-char master key into RAM in < 1 ms, and operate fully unlocked with zero operator friction across automated redeploys
 
 ---
 
@@ -100,6 +102,8 @@
 - **`wrapVault` refuses to re-generate master key if vault is already wrapped-and-locked:** Prevents accidental overwrite of an existing encrypted key — the operator must unlock the vault first before rotating the passphrase. Chosen as the safer default over silently overwriting.
 - **Rate limiting evaluated before auth on vault endpoints:** Brute-force protection (5 attempts / 15 min per IP) is applied as the very first line of the handler, before `requireSuperuser(e)`. Prevents exhausting the auth check itself as an oracle for timing attacks.
 - **Vault status endpoint (`GET /api/v1/system/vault/status`) intentionally does not filter content:** Returns raw `{ wrapped, locked, has_env_key }` — no sensitive data is included; withholding this state would only hinder legitimate operators.
+- **`SECURITY_KEY` env var as the PaaS unattended-boot mechanism:** Instead of requiring the operator to unlock the vault manually after each redeploy, setting `SECURITY_KEY` in the PaaS environment panel (Coolify/Easypanel) lets PocketBase call `envHelper.unwrapVault(securityKey)` at boot and load the master key into RAM automatically. Chosen over a persistent unlocked vault to keep the key wrapped at rest while eliminating manual intervention.
+- **Setup Wizard SECURITY_KEY field is optional with generator button:** Generating a random 32+ char key client-side reduces the barrier for operators unfamiliar with cryptography; field is optional so existing unlocked-vault deployments are unaffected.
 
 ---
 
@@ -135,6 +139,8 @@
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
 - `pb_hooks/env_helper.js` — **UPDATED** envelope encryption / key wrapping: master key wrapped with superuser passphrase via AES-256-GCM; `wrapVault` / `unwrapVault` / `getMasterKey` now support both plaintext and wrapped vault formats; disk file has precedence over env vars
 - `pb_hooks/system_vault_api.pb.js` — **NEW** vault key management endpoints: unlock, enable-passphrase (rotate), status; rate-limited + superuser-gated
+- `pb_public/setup.html` — **UPDATED** added optional SECURITY_KEY field with client-side 32+ char random key generator button; synced with embedded template in `setup_wizard.pb.js`
+- `pb_hooks/setup_wizard.pb.js` — **UPDATED** `POST /api/plugin/setup` calls `envHelper.wrapVault(securityKey)` when SECURITY_KEY is provided; `SETUP_HTML_EMBEDDED` kept in sync with static file
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error
