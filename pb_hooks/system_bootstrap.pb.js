@@ -1,43 +1,44 @@
 // pb_hooks/system_bootstrap.pb.js
 /// <reference path="../pb_data/types.d.ts" />
 
-/**
- * Bootstrap Initialization Script for pb-core infrastructure.
- * Ensures system collections exist, initializes env_helper (generating master key if missing),
- * synchronizes active dynamic hooks to disk, and re-applies pending hot migrations on startup.
- */
+(function () {
+    /**
+     * Bootstrap Initialization Script for pb-core infrastructure.
+     * Ensures system collections exist, initializes env_helper (generating master key if missing),
+     * synchronizes active dynamic hooks to disk, and re-applies pending hot migrations on startup.
+     */
 
-const COLLECTION_SETTINGS = "z_system_settings_do_not_touch";
-const COLLECTION_HOOKS = "z_system_hooks_do_not_touch";
-const COLLECTION_MIGRATIONS = "z_system_migrations_do_not_touch";
-
-/**
- * Helper to ensure a collection exists with proper fields and indexes.
- */
-function ensureCollectionExists(name, fields, indexes) {
-    try {
-        $app.findCollectionByNameOrId(name);
-    } catch (_) {
-        console.log("[BOOTSTRAP] Creating missing system collection:", name);
-        const col = new Collection({
-            name: name,
-            type: "base",
-            listRule: null,   // Lock down API access by default; handled via routerAdd APIs
-            viewRule: null,
-            createRule: null,
-            updateRule: null,
-            deleteRule: null,
-            fields: fields,
-            indexes: indexes || []
-        });
-        $app.save(col);
+    /**
+     * Helper to ensure a collection exists with proper fields and indexes.
+     */
+    function ensureCollectionExists(name, fields, indexes) {
+        try {
+            $app.findCollectionByNameOrId(name);
+        } catch (_) {
+            console.log("[BOOTSTRAP] Creating missing system collection:", name);
+            const col = new Collection({
+                name: name,
+                type: "base",
+                listRule: null,   // Lock down API access by default; handled via routerAdd APIs
+                viewRule: null,
+                createRule: null,
+                updateRule: null,
+                deleteRule: null,
+                fields: fields,
+                indexes: indexes || []
+            });
+            $app.save(col);
+        }
     }
-}
 
-onBootstrap((e) => {
-    e.next();
+    onBootstrap((e) => {
+        e.next();
 
-    console.log("[BOOTSTRAP] Initializing pb-core infrastructure...");
+        var COLLECTION_SETTINGS = "z_system_settings_do_not_touch";
+        var COLLECTION_HOOKS = "z_system_hooks_do_not_touch";
+        var COLLECTION_MIGRATIONS = "z_system_migrations_do_not_touch";
+
+        console.log("[BOOTSTRAP] Initializing pb-core infrastructure...");
 
     // 1. Auto-create 3 system collections if they don't exist
     ensureCollectionExists(COLLECTION_SETTINGS, [
@@ -194,7 +195,7 @@ onRecordAfterCreateSuccess((e) => {
     } catch (err) {
         console.log("[HOOK SYNC ERROR] AfterCreate sync failed:", err.message);
     }
-}, COLLECTION_HOOKS);
+}, "z_system_hooks_do_not_touch");
 
 onRecordAfterUpdateSuccess((e) => {
     e.next();
@@ -204,7 +205,7 @@ onRecordAfterUpdateSuccess((e) => {
     } catch (err) {
         console.log("[HOOK SYNC ERROR] AfterUpdate sync failed:", err.message);
     }
-}, COLLECTION_HOOKS);
+}, "z_system_hooks_do_not_touch");
 
 onRecordAfterDeleteSuccess((e) => {
     e.next();
@@ -215,4 +216,5 @@ onRecordAfterDeleteSuccess((e) => {
     } catch (err) {
         console.log("[HOOK SYNC ERROR] AfterDelete remove failed:", err.message);
     }
-}, COLLECTION_HOOKS);
+}, "z_system_hooks_do_not_touch");
+})();
