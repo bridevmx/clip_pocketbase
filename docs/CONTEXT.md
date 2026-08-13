@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (Setup Wizard SECURITY_KEY field + unattended PaaS boot via env var)
+> Last updated: 2026-08-13 (feat/simple-env-encryption — single master key, simplified Setup Wizard, plugin_settings permanently dropped)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -63,6 +63,8 @@
 - [COMPLETE] **Vault Key API Endpoints (`system_vault_api.pb.js`)** — `POST /api/v1/system/vault/unlock` (unlock with passphrase), `POST /api/v1/system/vault/enable-passphrase` (wrap or rotate passphrase, requires re-auth with old key), `GET /api/v1/system/vault/status` (returns `{ wrapped, locked, has_env_key }`); rate-limited 5 attempts/15 min per IP (evaluated before auth); all endpoints require `requireSuperuser(e)`
 - [COMPLETE] **Setup Wizard SECURITY_KEY Field** — optional "Security Key" field added to `pb_public/setup.html` with dynamic 32+ char generator button (`🎲 Generate Key`); if provided, `setup_wizard.pb.js` calls `envHelper.wrapVault(securityKey)` to protect `pb_data/.encryption_key` on disk; `SETUP_HTML_EMBEDDED` template kept 100% in sync with the static file
 - [COMPLETE] **Unattended PaaS Boot via `SECURITY_KEY` env var** — setting `SECURITY_KEY=<key>` in Coolify/Easypanel causes PocketBase to read it on boot, unwrap the 124-char master key into RAM in < 1 ms, and operate fully unlocked with zero operator friction across automated redeploys
+- [COMPLETE] **Simplified Single-Key Encryption Architecture (`feat/simple-env-encryption`)** — eliminated vault/wrapping complexity; `env_helper.js` `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); no passphrases or secondary wrapping; `system_vault_api.pb.js` removed in this branch
+- [COMPLETE] **Setup Wizard Simplified (`setup_wizard.pb.js` + `pb_public/setup.html`)** — clean wizard requiring Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret Token, and optional Admin User IDs; all credentials saved directly AES-encrypted to `z_system_settings_do_not_touch`; `SETUP_HTML_EMBEDDED` kept 100% in sync with static file; no `ENCRYPTION_KEY` field in form
 
 ---
 
@@ -104,6 +106,8 @@
 - **Vault status endpoint (`GET /api/v1/system/vault/status`) intentionally does not filter content:** Returns raw `{ wrapped, locked, has_env_key }` — no sensitive data is included; withholding this state would only hinder legitimate operators.
 - **`SECURITY_KEY` env var as the PaaS unattended-boot mechanism:** Instead of requiring the operator to unlock the vault manually after each redeploy, setting `SECURITY_KEY` in the PaaS environment panel (Coolify/Easypanel) lets PocketBase call `envHelper.unwrapVault(securityKey)` at boot and load the master key into RAM automatically. Chosen over a persistent unlocked vault to keep the key wrapped at rest while eliminating manual intervention.
 - **Setup Wizard SECURITY_KEY field is optional with generator button:** Generating a random 32+ char key client-side reduces the barrier for operators unfamiliar with cryptography; field is optional so existing unlocked-vault deployments are unaffected.
+- **`feat/simple-env-encryption` eliminates vault/wrapping complexity:** The full envelope-encryption + passphrase wrapping architecture (vault unlock, passphrases, `system_vault_api.pb.js`) was dropped in favor of a single `ENCRYPTION_KEY` env var or auto-generated key on disk. Chosen to reduce operational complexity for PaaS deployments where the env var IS the security boundary. The previous vault approach is preserved in `main` for deployments that need passphrase-at-rest protection.
+- **`system_vault_api.pb.js` removed in `feat/simple-env-encryption`:** Vault unlock/rotate/status endpoints are unnecessary when a single key is used directly; removing the file eliminates dead code and attack surface in this simplified mode.
 
 ---
 
@@ -117,6 +121,7 @@
 - **[PocketBase]** `info.auth.isSuperUser` does not exist — must lookup record in `_superusers` collection.
 - **[Docker]** `sha256sum -c -` failed because binary was downloaded as `/tmp/pb.zip` but `checksums.txt` referenced the original filename — fixed by `cd /tmp` before downloading without renaming the file.
 - **[Docker]** `/pb/pb_data` had no write permissions for user `pocketbase` — fixed with `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` before the `VOLUME` instruction.
+- **[Architecture]** Envelope encryption + passphrase wrapping proved too complex for PaaS operators — simplified in `feat/simple-env-encryption` to a single `ENCRYPTION_KEY` env var or auto-generated key on disk; vault/passphrase flow retained only in `main` branch.
 
 ---
 
@@ -137,10 +142,9 @@
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED** saves all credentials to `z_system_settings_do_not_touch`; `ENCRYPTION_KEY` no longer required in request body; drops any residual `plugin_settings` records on save; deletes legacy collection if still present
 - `pb_hooks/system_bootstrap.pb.js` — **UPDATED** `autoMigratePlaintextSettings()` IIFE: detects sensitive keys in `plugin_settings` plaintext, encrypts into `z_system_settings_do_not_touch`, hard-deletes source records with `$app.delete`; also drops the `plugin_settings` collection itself on boot if it still exists
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
-- `pb_hooks/env_helper.js` — **UPDATED** envelope encryption / key wrapping: master key wrapped with superuser passphrase via AES-256-GCM; `wrapVault` / `unwrapVault` / `getMasterKey` now support both plaintext and wrapped vault formats; disk file has precedence over env vars
-- `pb_hooks/system_vault_api.pb.js` — **NEW** vault key management endpoints: unlock, enable-passphrase (rotate), status; rate-limited + superuser-gated
-- `pb_public/setup.html` — **UPDATED** added optional SECURITY_KEY field with client-side 32+ char random key generator button; synced with embedded template in `setup_wizard.pb.js`
-- `pb_hooks/setup_wizard.pb.js` — **UPDATED** `POST /api/plugin/setup` calls `envHelper.wrapVault(securityKey)` when SECURITY_KEY is provided; `SETUP_HTML_EMBEDDED` kept in sync with static file
+- `pb_hooks/env_helper.js` — **UPDATED (simple-env branch)** `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
+- `pb_hooks/setup_wizard.pb.js` — **UPDATED** saves all credentials directly AES-encrypted to `z_system_settings_do_not_touch`; no SECURITY_KEY/wrapVault call; `SETUP_HTML_EMBEDDED` synced with static file; drops legacy `plugin_settings` collection on save
+- `pb_public/setup.html` — **UPDATED (simple-env branch)** clean wizard form: Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret, optional Admin User IDs; no ENCRYPTION_KEY or SECURITY_KEY fields
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error

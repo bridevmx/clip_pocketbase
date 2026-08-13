@@ -194,35 +194,6 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
                 <span class="text-slate-400">Nota: Los superusuarios de PocketBase ya cuentan con acceso total implícito.</span>
               </p>
             </div>
-
-            <!-- Security Key / Passphrase (Optional for PaaS / Coolify automated redeploys) -->
-            <div class="border-t border-slate-800/80 pt-4">
-              <label for="securityKey" class="block text-xs font-semibold uppercase tracking-wider text-amber-400/90 mb-1.5 flex items-center space-x-1.5">
-                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                <span>Clave de Seguridad (SECURITY_KEY) <span class="text-slate-500 font-normal lowercase">(opcional / recomendado PaaS)</span></span>
-              </label>
-              <div class="flex space-x-2">
-                <div class="relative flex-1">
-                  <input type="password" id="securityKey" placeholder="Dejar vacío para auto-generar en disco"
-                    class="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-3.5 pr-10 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition font-mono">
-                  <button type="button" id="toggleSecurityKeyBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
-                    <span class="sr-only">Mostrar u ocultar clave</span>
-                    <svg id="eyeIcon3" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </button>
-                </div>
-                <button type="button" id="btnGenSecKey" class="px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-xl transition flex items-center whitespace-nowrap">
-                  🎲 Generar Clave
-                </button>
-              </div>
-              <p class="mt-1.5 text-xs text-slate-500">
-                Si defines una clave, se utilizará para cifrar la clave maestra en disco. Puedes agregar <code class="text-amber-300/90 font-mono">SECURITY_KEY</code> en tu panel de Coolify para reinicios desatendidos en caliente.
-              </p>
-            </div>
           </div>
         </div>
 
@@ -250,7 +221,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       <h2 class="text-2xl font-bold text-slate-100 mb-2">¡Plugin Configurado Exitosamente!</h2>
       <p class="text-sm text-slate-300 max-w-md mx-auto mb-6">
-        Las credenciales de Clip y los parámetros de PocketBase se guardaron de forma segura en la base de datos.
+        Las credenciales de Clip y los parámetros de PocketBase se guardaron de forma segura en la base de datos cifrada.
       </p>
 
       <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left mb-6">
@@ -271,7 +242,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
         <a href="/_/" class="w-full sm:w-auto px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-semibold rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
           <span>Ir a PocketBase Admin UI</span>
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
         </a>
@@ -300,14 +271,11 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       const pocketbaseUrlInput = document.getElementById('pocketbaseUrl');
       const webhookSecretInput = document.getElementById('webhookSecret');
       const adminUserIdsInput = document.getElementById('adminUserIds');
-      const securityKeyInput = document.getElementById('securityKey');
       const webhookPreview = document.getElementById('webhookPreview');
 
       const togglePasswordBtn = document.getElementById('togglePasswordBtn');
       const toggleApiKeyBtn = document.getElementById('toggleApiKeyBtn');
-      const toggleSecurityKeyBtn = document.getElementById('toggleSecurityKeyBtn');
       const btnGenUuid = document.getElementById('btnGenUuid');
-      const btnGenSecKey = document.getElementById('btnGenSecKey');
       const btnSubmit = document.getElementById('btnSubmit');
       const btnSubmitText = document.getElementById('btnSubmitText');
       const btnSpinner = document.getElementById('btnSpinner');
@@ -367,25 +335,11 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       setupTogglePassword(passwordInput, togglePasswordBtn);
       setupTogglePassword(clipApiKeyInput, toggleApiKeyBtn);
-      if (toggleSecurityKeyBtn && securityKeyInput) {
-        setupTogglePassword(securityKeyInput, toggleSecurityKeyBtn);
-      }
 
       // Event Listeners for Preview Updates
       pocketbaseUrlInput.addEventListener('input', updateWebhookPreview);
       webhookSecretInput.addEventListener('input', updateWebhookPreview);
       btnGenUuid.addEventListener('click', generateUuid);
-      if (btnGenSecKey && securityKeyInput) {
-        btnGenSecKey.addEventListener('click', () => {
-          let key = '';
-          if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-            key = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
-          } else {
-            key = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.replace(/[x]/g, () => Math.floor(Math.random() * 16).toString(16));
-          }
-          securityKeyInput.value = key;
-        });
-      }
 
       // Reconfigure action
       if (btnReconfigure) {
@@ -453,7 +407,6 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         const pocketbase_url = pocketbaseUrlInput.value.trim();
         const clip_webhook_secret = webhookSecretInput.value.trim();
         const admin_user_ids = adminUserIdsInput.value.trim();
-        const security_key = securityKeyInput ? securityKeyInput.value.trim() : "";
 
         if (!clip_api_key || clip_api_key.length < 20) {
           showAlert('La Clip API Key debe tener al menos 20 caracteres.');
@@ -472,8 +425,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             clip_api_key,
             pocketbase_url,
             clip_webhook_secret,
-            admin_user_ids,
-            security_key
+            admin_user_ids
           };
 
           const response = await fetch('/api/plugin/setup', {
@@ -518,7 +470,6 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
 routerAdd("GET", "/api/plugin/setup-status", (e) => {
   var psh = require(\`\${__hooks}/plugin_settings_helper.js\`);
-  var envHelper = require(\`\${__hooks}/env_helper.js\`);
   var isConfigured = psh.getSetting("is_configured", "false") === "true";
 
   var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
@@ -534,8 +485,7 @@ routerAdd("GET", "/api/plugin/setup-status", (e) => {
 
   return e.json(200, {
     is_configured: isConfigured,
-    pocketbase_url_suggestion: pbUrl || "",
-    vault_status: envHelper.getVaultStatus()
+    pocketbase_url_suggestion: pbUrl || ""
   });
 });
 
@@ -608,17 +558,6 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   // ── Unified Encrypted Storage Execution ──────────────────────────────
   var envHelper = require(\`\${__hooks}/env_helper.js\`);
 
-  // Wrap master key if security_key / passphrase is provided
-  var secKey = (body.security_key || body.passphrase || body.encryption_key || "").toString().trim();
-  if (secKey.length > 512) throw new BadRequestError("security_key exceeds maximum allowed length.");
-  if (secKey) {
-    try {
-      envHelper.wrapVault(secKey);
-    } catch (wrapErr) {
-      console.log("[SETUP ERROR] Failed to wrap vault with security key:", wrapErr.message);
-    }
-  }
-
   envHelper.setEnv("clip_api_key", clipApiKey, true);
   envHelper.setEnv("pocketbase_url", pbUrl, true);
   if (clipWebhookSecret) {
@@ -637,12 +576,9 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
     }
   } catch (_) {}
 
-  var currentVaultStatus = envHelper.getVaultStatus();
-
   return e.json(200, {
     success: true,
     message: "Plugin configuration completed successfully.",
-    can_encrypt: true,
-    vault_status: currentVaultStatus
+    can_encrypt: true
   });
 });
