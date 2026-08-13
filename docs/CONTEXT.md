@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (Setup Wizard /setup feature)
+> Last updated: 2026-08-13 (HOOKS-MIGRATIONS-ENVS-GUIDE technical documentation added)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -114,6 +114,7 @@
 - `pb_migrations/1786000001_clip_webhook_secret.js` — **NEW** adds `clip_webhook_secret` field to `plugin_settings`
 - `pb_migrations/1786000002_setup_wizard_settings.js` — **NEW** adds `POCKETBASE_URL` and `is_configured` fields to `plugin_settings`
 - `docs/HANDOFF.md` — full project handoff with ADRs, endpoints, collections, status flows, known issues
+- `docs/HOOKS-MIGRATIONS-ENVS-GUIDE.md` — **NEW** comprehensive technical reference for PocketBase v0.23+ JSVM: boot lifecycle, `pb_hooks` architecture, `routerAdd`/static routes, event hooks (`onBootstrap`, `onRecordCreate`, `onCron`), `require()` scope isolation, `$app.*` Records API, idempotent migrations, API rules, DB seeding, and hot-config system (`getEnvOrSetting()`, Setup Wizard, zero-downtime credential rotation)
 - `scripts/test.js` — E2E tests (36/36 passing for Clip; SPEI E2E tests still pending)
 - `Dockerfile` — multi-stage, multi-arch build; Stage 1 downloads PocketBase ARM64 binary from GitHub Releases + SHA-256 verify; Stage 2 is native ARM64 runtime with non-root user `pocketbase`
 
