@@ -24,16 +24,17 @@ const CLIP_API_BASE_URL = "https://api.payclip.com";
 /**
  * Returns the Basic Auth header value for the Clip API.
  *
- * CLIP_API_KEY accepts either format from the Clip dashboard:
+ * CLIP_API_KEY accepts either format from the Clip dashboard or plugin_settings:
  *   - Full header:  "Basic NjQyZmYx..."  (as shown in the Clip token generator)
  *   - Token only:   "NjQyZmYx..."        (just the Base64 part)
  *
  * @returns {string}  "Basic <base64token>"
  */
 function clipBasicAuthHeader() {
-  const token = $os.getenv("CLIP_API_KEY");
+  const psh = require(`${__hooks}/plugin_settings_helper.js`);
+  const token = psh.getEnvOrSetting("CLIP_API_KEY", "clip_api_key", "");
   if (!token) {
-    throw new Error("CLIP_API_KEY environment variable is not configured");
+    throw new Error("CLIP_API_KEY is not configured (checked environment variable and plugin_settings)");
   }
   if (token.indexOf("Basic ") === 0) {
     return token;

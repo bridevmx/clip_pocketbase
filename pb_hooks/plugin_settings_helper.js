@@ -52,6 +52,26 @@ function getSetting(key, defaultValue) {
 }
 
 /**
+ * Reads a value from environment variables first.
+ * If empty or undefined, reads settingKey from plugin_settings collection.
+ * If missing in DB as well, returns defaultValue.
+ *
+ * @param {string} envKey
+ * @param {string} settingKey
+ * @param {string} [defaultValue=""]
+ * @returns {string}
+ */
+function getEnvOrSetting(envKey, settingKey, defaultValue) {
+    if (envKey) {
+        var envVal = $os.getenv(envKey);
+        if (envVal && envVal.trim() !== "") {
+            return envVal;
+        }
+    }
+    return getSetting(settingKey, defaultValue);
+}
+
+/**
  * Returns true if the userId has plugin admin rights, meaning:
  *   1. The user is a _superuser (always has access), OR
  *   2. Their ID appears in plugin_settings key "admin_user_ids"
@@ -80,6 +100,7 @@ function isPluginAdmin(userId) {
 }
 
 module.exports = {
-    getSetting:    getSetting,
-    isPluginAdmin: isPluginAdmin,
+    getSetting:      getSetting,
+    getEnvOrSetting: getEnvOrSetting,
+    isPluginAdmin:   isPluginAdmin,
 };

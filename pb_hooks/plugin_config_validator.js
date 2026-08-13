@@ -45,6 +45,9 @@ function printConfigBanner(errors, warnings) {
   console.log(THIN_SEP);
   console.log("  HOW TO FIX:");
   console.log("");
+  console.log("  Setup Wizard (Recommended):");
+  console.log("    Visit http://<your-domain>/setup to configure the plugin via UI.");
+  console.log("");
   console.log("  Environment variables (set before starting PocketBase):");
   console.log("    export CLIP_API_KEY=\"Basic <your_clip_token>\"");
   console.log("    export POCKETBASE_URL=\"https://your-pocketbase-domain.com\"");
@@ -69,17 +72,41 @@ function printConfigBanner(errors, warnings) {
  * @throws {Error} if any critical config is missing
  */
 function validate(app) {
+  var psh = require(`${__hooks}/plugin_settings_helper.js`);
+
+  var isConfigured = psh.getSetting("is_configured", "false");
+  var clipApiKey   = psh.getEnvOrSetting("CLIP_API_KEY", "clip_api_key", "");
+  var pbUrl        = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
+
+  // If setup wizard has not been completed and environment variables are absent,
+  // do not throw fatal error. Display friendly wizard instruction banner.
+  if (isConfigured !== "true" && (!clipApiKey || !pbUrl)) {
+    console.log("");
+    console.log(SEPARATOR);
+    console.log("  PAYMENTS PLUGIN — SETUP REQUIRED");
+    console.log(SEPARATOR);
+    console.log("");
+    console.log("  ⚠ The Clip / SPEI payments plugin is not fully configured yet.");
+    console.log("  Please complete the setup wizard by navigating to:");
+    console.log("");
+    console.log("    " + (pbUrl || "http://<your-domain>") + "/setup");
+    console.log("");
+    console.log("  Or provide CLIP_API_KEY and POCKETBASE_URL environment variables.");
+    console.log(SEPARATOR);
+    console.log("");
+    return;
+  }
+
   var errors   = [];
   var warnings = [];
 
-  // ── CRITICAL: Environment variables ───────────────────────────────────
+  // ── CRITICAL: Configuration checks ───────────────────────────────────
 
-  var clipApiKey = $os.getenv("CLIP_API_KEY");
   if (!clipApiKey || clipApiKey.trim() === "") {
     errors.push(
       "CLIP_API_KEY is not set.\n" +
       "      Get your token from https://dashboard.payclip.com → API Keys.\n" +
-      "      Set it as: export CLIP_API_KEY=\"Basic <base64token>\""
+      "      Set it as: export CLIP_API_KEY=\"Basic <base64token>\" or visit /setup"
     );
   } else if (clipApiKey.length < 20) {
     errors.push(
@@ -88,13 +115,12 @@ function validate(app) {
     );
   }
 
-  var pbUrl = $os.getenv("POCKETBASE_URL");
   if (!pbUrl || pbUrl.trim() === "") {
     errors.push(
       "POCKETBASE_URL is not set.\n" +
       "      This is the public URL of your PocketBase instance.\n" +
       "      It is used to build the Clip webhook callback URL.\n" +
-      "      Set it as: export POCKETBASE_URL=\"https://your-domain.com\""
+      "      Set it as: export POCKETBASE_URL=\"https://your-domain.com\" or visit /setup"
     );
   } else if (!pbUrl.startsWith("http://") && !pbUrl.startsWith("https://")) {
     errors.push(
@@ -135,7 +161,7 @@ function validate(app) {
           errors.push(
             "clip_webhook_secret is empty in plugin_settings.\n" +
             "      Without a secret token, anyone can send fake webhooks to your endpoint.\n" +
-            "      Set it to a random UUID in: Admin UI → plugin_settings → clip_webhook_secret\n" +
+            "      Set it to a random UUID via /setup or Admin UI → plugin_settings → clip_webhook_secret\n" +
             "      Then register the webhook URL in Clip dashboard as:\n" +
             "      " + (pbUrl || "<POCKETBASE_URL>") + "/api/clip/webhook?token=<your_secret>"
           );
@@ -193,7 +219,7 @@ function validate(app) {
   if (errors.length > 0) {
     throw new Error(
       "[PAYMENTS PLUGIN] Startup aborted: " + errors.length + " critical configuration error(s). " +
-      "Fix the issues above and restart PocketBase."
+      "Fix the issues above or complete setup at /setup and restart PocketBase."
     );
   }
 

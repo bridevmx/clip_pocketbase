@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13 (Setup Wizard /setup feature)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -38,6 +38,7 @@
 <!-- Status: COMPLETE | IN PROGRESS | BLOCKED -->
 
 - [COMPLETE] Clip Plugin — payment links, webhook, refund, transactions, status check (36/36 E2E tests passing)
+- [COMPLETE] **Dockerfile ARM64 Fix** — multi-stage, multi-arch Dockerfile for Oracle Cloud Free Tier (Ampere A1 / ARM64) via Coolify; PocketBase v0.39.10; SHA-256 verified binary; non-root user
 - [COMPLETE] SPEI/CEP Plugin — bank transfer verification with auto-validate, retry, and manual escalation
 - [COMPLETE] Security Hardening Round 1 — 4 fixes: order expiration, amount validation, CEP reuse prevention, stale CEP detection
 - [COMPLETE] **Security Hardening Round 2 (Threat Modeling)** — 8 additional security fixes across attack vectors A1–A6 and B1–B2
@@ -49,6 +50,7 @@
   - [A6] Rate limiting — in-memory sliding window per IP applied to create-link, create-order, and report-payment
   - [B1] Webhook secret token — `clip_webhook_secret` in `plugin_settings` verified via query param
   - [B2] Webhook idempotency reorder — order status checked before Clip API verification call
+- [COMPLETE] **Setup Wizard (`/setup`)** — interactive web UI to configure `CLIP_API_KEY`, `POCKETBASE_URL`, and `clip_webhook_secret` without Docker env vars or manual Admin UI edits; requires superuser auth to save credentials
 
 ---
 
@@ -60,13 +62,22 @@
 - **In-memory rate limiting (not distributed):** Chosen for simplicity in single-instance Easypanel deploy. Documented limitation: resets on PocketBase restart and does not work in multi-instance deployments.
 - **IDOR check on both Secure and Legacy auth modes:** When an authenticated user is present, ownership is always verified regardless of which auth mode the endpoint uses. Prevents privilege escalation through mode switching.
 - **Webhook secret via query param (not header):** Clip does not allow custom headers in webhook URL configuration. Token is passed as `?token=` query param and verified server-side.
-- **`(e.requestInfo().query || {})["token"]` for query param extraction:** Go's `.get("token")` method fails in Goja runtime. Object property access with fallback is the correct pattern.
+- **`(e.requestInfo().query || {})[\"token\"]` for query param extraction:** Go's `.get(\"token\")` method fails in Goja runtime. Object property access with fallback is the correct pattern.
 - **CommonJS `require()`/`module.exports`** — only way to share functions across hooks in Goja runtime; non-`.pb.js` files prevent auto-execution.
 - **`{ data, statusCode }` return pattern** — callers handle each HTTP status explicitly.
-- **`CLIP_API_KEY` stores pre-encoded Base64** — plugin detects `"Basic "` prefix and uses as-is.
+- **`CLIP_API_KEY` stores pre-encoded Base64** — plugin detects `\"Basic \"` prefix and uses as-is.
 - **PocketBase migration API uses `collection.fields.add(new Field({...}))`** — NOT `app.addField()`.
-- **Refund `reference.type` must be `"receipt"`** — Clip API oneof constraint, not `"ORDER_ID"`.
+- **Refund `reference.type` must be `\"receipt\"`** — Clip API oneof constraint, not `\"ORDER_ID\"`.
 - **Superuser auth via `_superusers` collection lookup** — `info.auth.isSuperUser` does not exist in PocketBase JSVM.
+- **PocketBase has no official Docker image:** `ghcr.io/pocketbase/pocketbase` does not exist or is not multi-arch — own Dockerfile downloading from GitHub Releases is the recommended approach.
+- **`$BUILDPLATFORM` in Stage 1 (download), `$TARGETPLATFORM` in Stage 2 (runtime):** avoids unnecessary QEMU emulation during binary download; final image is native ARM64.
+- **SHA-256 verification of PocketBase binary:** `checksums.txt` from GitHub Releases is used; `cd /tmp` before download required so the filename matches the checksum entry.
+- **Non-root user `pocketbase`:** `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` must be done before the `VOLUME` declaration to ensure write permissions.
+- **`getEnvOrSetting()` priority: env vars over DB settings** — `$os.getenv` is checked first; if not set, falls back to `plugin_settings` in the database. Env vars in Coolify/Easypanel always take precedence when present.
+- **Setup Wizard does not fail PocketBase boot:** If `is_configured` is `"false"`, `plugin_config_validator.js` prints a warning and invites the user to visit `/setup` instead of throwing a fatal error that would halt boot.
+- **`POST /api/plugin/setup` requires superuser auth:** Accepts `e.hasSuperuserAuth()` or superuser credentials in the request body; prevents unauthorized credential writes.
+- **`spei_settings` (bank accounts) are not overwritten during setup:** Setup Wizard only touches `plugin_settings` fields (`CLIP_API_KEY`, `POCKETBASE_URL`, `clip_webhook_secret`, `is_configured`).
+- **`GET /setup` serves a static HTML page** — `pb_public/setup.html` is served directly by PocketBase's built-in static file server; no extra framework needed.
 
 ---
 
@@ -78,6 +89,8 @@
 - **[IPv6]** First IP extraction implementation broke with IPv6 addresses — fixed with conditional block handling both formats.
 - **[SQLite]** `SELECT FOR UPDATE` not supported — worked around with UNIQUE conditional index as last defense line.
 - **[PocketBase]** `info.auth.isSuperUser` does not exist — must lookup record in `_superusers` collection.
+- **[Docker]** `sha256sum -c -` failed because binary was downloaded as `/tmp/pb.zip` but `checksums.txt` referenced the original filename — fixed by `cd /tmp` before downloading without renaming the file.
+- **[Docker]** `/pb/pb_data` had no write permissions for user `pocketbase` — fixed with `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` before the `VOLUME` instruction.
 
 ---
 
@@ -86,17 +99,23 @@
 <!-- Format: - `path/file` — what it does -->
 
 - `pb_hooks/rate_limiter.js` — **NEW** in-memory sliding-window rate limiter per IP; resets on restart; not distributed
-- `pb_hooks/clip_api_client.js` — HTTP client for Clip API; debug logs with token removed (structured logging only)
+- `pb_hooks/clip_api_client.js` — HTTP client for Clip API; debug logs with token removed (structured logging only); updated to use `getEnvOrSetting()`
 - `pb_hooks/spei_api_client.js` — CEP validation client; now exports `validateSpeiInputs()` for shared input sanitization
 - `pb_hooks/spei_report_payment.pb.js` — A1 reserve-then-validate + A5 sanitization + A6 rate limit applied
 - `pb_hooks/clip_webhook.pb.js` — A2 local DB check before Clip API + B1 secret token + B2 idempotency reorder
 - `pb_hooks/clip_create_link.pb.js` — A3 IDOR check (both auth modes) + A6 rate limit
 - `pb_hooks/spei_create_order.pb.js` — A3 IDOR check + A6 rate limit
 - `pb_hooks/spei_validate_cep.pb.js` — A5 validateSpeiInputs + corrected 401 vs 403 HTTP status codes
+- `pb_hooks/plugin_settings_helper.js` — **NEW** `getEnvOrSetting(key)` helper; reads env var first, falls back to `plugin_settings` DB record
+- `pb_hooks/plugin_config_validator.js` — **MODIFIED** soft-fail on `is_configured=false`; prints warning + `/setup` URL instead of fatal error
+- `pb_hooks/setup_wizard.pb.js` — **NEW** registers `GET /api/plugin/setup-status` (public) and `POST /api/plugin/setup` (superuser-only) endpoints
+- `pb_public/setup.html` — **NEW** static Setup Wizard UI; no JS framework; submits to `POST /api/plugin/setup`
 - `pb_migrations/1786000000_spei_cep_unique_criterio.js` — **NEW** UNIQUE conditional index on `cep_verifications` (race condition defense)
 - `pb_migrations/1786000001_clip_webhook_secret.js` — **NEW** adds `clip_webhook_secret` field to `plugin_settings`
+- `pb_migrations/1786000002_setup_wizard_settings.js` — **NEW** adds `POCKETBASE_URL` and `is_configured` fields to `plugin_settings`
 - `docs/HANDOFF.md` — full project handoff with ADRs, endpoints, collections, status flows, known issues
 - `scripts/test.js` — E2E tests (36/36 passing for Clip; SPEI E2E tests still pending)
+- `Dockerfile` — multi-stage, multi-arch build; Stage 1 downloads PocketBase ARM64 binary from GitHub Releases + SHA-256 verify; Stage 2 is native ARM64 runtime with non-root user `pocketbase`
 
 ---
 
@@ -110,3 +129,4 @@
 - [ ] EXPIRED status cron job — no scheduler implemented; orders stay MANUAL_REVIEW indefinitely after 12 retries
 - [ ] SPEI E2E test suite (`scripts/test-spei.js`) — structure similar to Clip tests
 - [ ] HMAC webhook verification for Clip — Clip does not expose HMAC yet; current fix uses shared secret token via query param
+- [ ] Redeploy in Coolify to verify ARM64 container starts correctly — user must trigger a new build from the updated Dockerfile; if platform is not auto-detected, specify `--platform linux/arm64` in Coolify build settings
