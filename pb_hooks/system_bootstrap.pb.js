@@ -100,7 +100,7 @@
         const records = $app.findRecordsByFilter(
             COLLECTION_MIGRATIONS,
             "(applied = false || applied = null) && up_code != ''",
-            "created ASC",
+            "+created",
             100,
             0
         );

@@ -75,32 +75,18 @@ function validate(app) {
   var errors   = [];
   var warnings = [];
 
-  // ── CRITICAL: Verify ENCRYPTION_KEY is configured ──────────────────
-  var encKey = $os.getenv("ENCRYPTION_KEY");
-  if (!encKey || encKey.trim() === "") {
-    errors.push(
-      "ENCRYPTION_KEY environment variable is not set.\n" +
-      "      All credentials are encrypted at rest and REQUIRE this key.\n" +
-      "      Set it in your Docker/Coolify environment before starting PocketBase.\n" +
-      "      If this is a fresh install, run the Setup Wizard at /setup — it will\n" +
-      "      generate a key for you. Copy it and add it to your environment."
-    );
-    // If ENCRYPTION_KEY is missing, all other checks will fail — report and return early
-    printConfigBanner(errors, warnings);
-    throw new Error("[PAYMENTS PLUGIN] Startup aborted: ENCRYPTION_KEY is not configured.");
-  }
-  if (encKey.trim().length < 32) {
-    errors.push(
-      "ENCRYPTION_KEY is too short (" + encKey.trim().length + " chars). Minimum is 32 characters.\n" +
-      "      Generate a new key: openssl rand -hex 32\n" +
-      "      Or use the Setup Wizard at /setup to generate one."
-    );
-    printConfigBanner(errors, warnings);
-    throw new Error("[PAYMENTS PLUGIN] Startup aborted: ENCRYPTION_KEY is too short.");
-  }
-
   var psh = require(`${__hooks}/plugin_settings_helper.js`);
   var envHelper = require(`${__hooks}/env_helper.js`);
+
+  // ── CRITICAL: Verify Master Encryption Key ──────────────────────────
+  try {
+    var masterKey = envHelper.getMasterKey();
+    if (!masterKey || masterKey.length < 32) {
+      warnings.push("ENCRYPTION_KEY is too short (minimum 32 characters).");
+    }
+  } catch (keyErr) {
+    warnings.push("Failed to initialize master encryption key: " + keyErr.message);
+  }
 
   var isConfigured = psh.getSetting("is_configured", "false");
   var clipApiKey   = envHelper.getEnv("clip_api_key") || envHelper.getEnv("CLIP_API_KEY") || "";
