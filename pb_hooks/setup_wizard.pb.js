@@ -486,7 +486,7 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
       } catch (_) {}
     }
 
-    if (adminRecord && $app.validatePassword(adminRecord, body.password.toString())) {
+    if (adminRecord && adminRecord.validatePassword(body.password.toString())) {
       isSuperuser = true;
     }
   }
