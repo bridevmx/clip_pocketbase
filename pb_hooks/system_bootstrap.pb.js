@@ -8,31 +8,28 @@
      * synchronizes active dynamic hooks to disk, and re-applies pending hot migrations on startup.
      */
 
-    /**
-     * Helper to ensure a collection exists with proper fields and indexes.
-     */
-    function ensureCollectionExists(name, fields, indexes) {
-        try {
-            $app.findCollectionByNameOrId(name);
-        } catch (_) {
-            console.log("[BOOTSTRAP] Creating missing system collection:", name);
-            const col = new Collection({
-                name: name,
-                type: "base",
-                listRule: null,   // Lock down API access by default; handled via routerAdd APIs
-                viewRule: null,
-                createRule: null,
-                updateRule: null,
-                deleteRule: null,
-                fields: fields,
-                indexes: indexes || []
-            });
-            $app.save(col);
-        }
-    }
-
     onBootstrap((e) => {
         e.next();
+
+        function ensureCollectionExists(name, fields, indexes) {
+            try {
+                $app.findCollectionByNameOrId(name);
+            } catch (_) {
+                console.log("[BOOTSTRAP] Creating missing system collection:", name);
+                const col = new Collection({
+                    name: name,
+                    type: "base",
+                    listRule: null,   // Lock down API access by default; handled via routerAdd APIs
+                    viewRule: null,
+                    createRule: null,
+                    updateRule: null,
+                    deleteRule: null,
+                    fields: fields,
+                    indexes: indexes || []
+                });
+                $app.save(col);
+            }
+        }
 
         var COLLECTION_SETTINGS = "z_system_settings_do_not_touch";
         var COLLECTION_HOOKS = "z_system_hooks_do_not_touch";
