@@ -292,7 +292,7 @@
 
       // Update Webhook URL Preview
       function updateWebhookPreview() {
-        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\/+$/, '');
+        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/[\/]+$/, '');
         let secret = (webhookSecretInput.value || '').trim();
         let preview = `${baseUrl}/api/clip/webhook?token=${encodeURIComponent(secret)}`;
         webhookPreview.textContent = preview;

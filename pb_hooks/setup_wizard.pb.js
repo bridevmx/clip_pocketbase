@@ -242,7 +242,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
         <a href="/_/" class="w-full sm:w-auto px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-semibold rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
           <span>Ir a PocketBase Admin UI</span>
-          <svg class="w-4 h-4 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
         </a>
@@ -302,7 +302,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       // Update Webhook URL Preview
       function updateWebhookPreview() {
-        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/\\/+$/, '');
+        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/[\/]+$/, '');
         let secret = (webhookSecretInput.value || '').trim();
         let preview = \`\${baseUrl}/api/clip/webhook?token=\${encodeURIComponent(secret)}\`;
         webhookPreview.textContent = preview;
@@ -466,10 +466,11 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
     })();
   </script>
 </body>
-</html>\`;
+</html>
+`;
 
 routerAdd("GET", "/api/plugin/setup-status", (e) => {
-  var psh = require(\`\${__hooks}/plugin_settings_helper.js\`);
+  var psh = require(`${__hooks}/plugin_settings_helper.js`);
   var isConfigured = psh.getSetting("is_configured", "false") === "true";
 
   var pbUrl = psh.getEnvOrSetting("POCKETBASE_URL", "pocketbase_url", "");
@@ -504,7 +505,7 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   var body = info.body || {};
 
   // ── Rate Limiting — protect superuser auth from brute force ──────────────
-  var rl = require(\`\${__hooks}/rate_limiter.js\`);
+  var rl = require(`${__hooks}/rate_limiter.js`);
   var clientIp = e.realIP ? e.realIP() : "unknown";
   var rlResult = rl.checkLimit("setup_auth:" + clientIp, 5, 900000); // 5 attempts / 15 min
   if (!rlResult.allowed) {
@@ -556,7 +557,7 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   if (adminUserIds.length > 2000)     throw new BadRequestError("admin_user_ids exceeds maximum allowed length.");
 
   // ── Unified Encrypted Storage Execution ──────────────────────────────
-  var envHelper = require(\`\${__hooks}/env_helper.js\`);
+  var envHelper = require(`${__hooks}/env_helper.js`);
 
   envHelper.setEnv("clip_api_key", clipApiKey, true);
   envHelper.setEnv("pocketbase_url", pbUrl, true);
