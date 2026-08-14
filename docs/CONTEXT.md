@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-13 (feat/simple-env-encryption — syntax fix: SETUP_HTML_EMBEDDED regex escape collision resolved)
+> Last updated: 2026-08-14 (feat/simple-env-encryption — AES key size fix: `derive32ByteKey` in `env_helper.js`)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -65,7 +65,8 @@
 - [COMPLETE] **Unattended PaaS Boot via `SECURITY_KEY` env var** — setting `SECURITY_KEY=<key>` in Coolify/Easypanel causes PocketBase to read it on boot, unwrap the 124-char master key into RAM in < 1 ms, and operate fully unlocked with zero operator friction across automated redeploys
 - [COMPLETE] **Simplified Single-Key Encryption Architecture (`feat/simple-env-encryption`)** — eliminated vault/wrapping complexity; `env_helper.js` `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); no passphrases or secondary wrapping; `system_vault_api.pb.js` removed in this branch
 - [COMPLETE] **Setup Wizard Simplified (`setup_wizard.pb.js` + `pb_public/setup.html`)** — clean wizard requiring Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret Token, and optional Admin User IDs; all credentials saved directly AES-encrypted to `z_system_settings_do_not_touch`; `SETUP_HTML_EMBEDDED` kept 100% in sync with static file; no `ENCRYPTION_KEY` field in form
-- [COMPLETE] **`SETUP_HTML_EMBEDDED` Regex Escape Syntax Fix** — replaced `/\/+$/` with `/[\/]+$/` in both `pb_public/setup.html` and the embedded template in `pb_hooks/setup_wizard.pb.js`; the original regex's backslash caused a syntax collision when Goja evaluated the multi-line JS template string; `node --check` passes on all `pb_hooks/` files
+- [COMPLETE] **`SETUP_HTML_EMBEDDED` Regex Escape Syntax Fix** — replaced `/\\/+$/` with `/[\\/]+$/` in both `pb_public/setup.html` and the embedded template in `pb_hooks/setup_wizard.pb.js`; the original regex's backslash caused a syntax collision when Goja evaluated the multi-line JS template string; `node --check` passes on all `pb_hooks/` files
+- [COMPLETE] **AES Key Size Fix (`env_helper.js`)** — added `derive32ByteKey(rawKey)` which deterministically derives exactly 32 ASCII bytes from any-length `ENCRYPTION_KEY` via the first 32 hex chars of `$security.sha256(trimmed)`; integrated into `getEnv` and `setEnv`; resolves Go `crypto/aes: invalid key size` panic for keys of any length (124, 425, etc.); verified with `node --check` and approved by `@code-reviewer`
 
 ---
 
@@ -108,7 +109,8 @@
 - **`SECURITY_KEY` env var as the PaaS unattended-boot mechanism:** Instead of requiring the operator to unlock the vault manually after each redeploy, setting `SECURITY_KEY` in the PaaS environment panel (Coolify/Easypanel) lets PocketBase call `envHelper.unwrapVault(securityKey)` at boot and load the master key into RAM automatically. Chosen over a persistent unlocked vault to keep the key wrapped at rest while eliminating manual intervention.
 - **Setup Wizard SECURITY_KEY field is optional with generator button:** Generating a random 32+ char key client-side reduces the barrier for operators unfamiliar with cryptography; field is optional so existing unlocked-vault deployments are unaffected.
 - **`feat/simple-env-encryption` eliminates vault/wrapping complexity:** The full envelope-encryption + passphrase wrapping architecture (vault unlock, passphrases, `system_vault_api.pb.js`) was dropped in favor of a single `ENCRYPTION_KEY` env var or auto-generated key on disk. Chosen to reduce operational complexity for PaaS deployments where the env var IS the security boundary. The previous vault approach is preserved in `main` for deployments that need passphrase-at-rest protection.
-- **`/[\/]+$/` instead of `/\/+$/` in embedded JS template strings:** When a regex literal containing `\/` is embedded inside a multi-line JS template string that itself lives inside a Goja-evaluated PocketBase hook, the backslash triggers a parser-level syntax collision. Using a character class `[\/]` achieves identical semantics without the escape ambiguity. Applied consistently in both `pb_public/setup.html` and `SETUP_HTML_EMBEDDED` in `setup_wizard.pb.js`.
+- **`/[\\/]+$/` instead of `/\\/+$/` in embedded JS template strings:** When a regex literal containing `\\/` is embedded inside a multi-line JS template string that itself lives inside a Goja-evaluated PocketBase hook, the backslash triggers a parser-level syntax collision. Using a character class `[\\/]` achieves identical semantics without the escape ambiguity. Applied consistently in both `pb_public/setup.html` and `SETUP_HTML_EMBEDDED` in `setup_wizard.pb.js`.
+- **`derive32ByteKey(rawKey)` in `env_helper.js` for AES-256 compliance:** `$security.encrypt`/`$security.decrypt` in Goja pass the key directly to Go's `aes.NewCipher([]byte(key))`, which requires EXACTLY 16, 24, or 32 bytes. Auto-generated keys (124 chars) and any user-supplied `ENCRYPTION_KEY` of arbitrary length would panic Go with `crypto/aes: invalid key size`. Solution: derive a stable 32-byte key deterministically using the first 32 hex chars of `$security.sha256(trimmedKey)` — no key material is lost, result is always exactly 32 ASCII bytes, and derivation is deterministic so previously encrypted values remain decryptable.
 
 ---
 
@@ -122,7 +124,8 @@
 - **[PocketBase]** `info.auth.isSuperUser` does not exist — must lookup record in `_superusers` collection.
 - **[Docker]** `sha256sum -c -` failed because binary was downloaded as `/tmp/pb.zip` but `checksums.txt` referenced the original filename — fixed by `cd /tmp` before downloading without renaming the file.
 - **[Docker]** `/pb/pb_data` had no write permissions for user `pocketbase` — fixed with `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` before the `VOLUME` instruction.
-- **[Goja / Template Strings]** Regex `/\/+$/` inside `SETUP_HTML_EMBEDDED` multi-line JS template caused a syntax collision when Goja parsed the hook — backslash in the pattern escaped the closing `/` of the literal, breaking parsing. Fixed by rewriting the regex as `/[\/]+$/` (character class avoids the escape ambiguity). Same fix applied to the static `pb_public/setup.html`.
+- **[Goja / Template Strings]** Regex `/\\/+$/` inside `SETUP_HTML_EMBEDDED` multi-line JS template caused a syntax collision when Goja parsed the hook — backslash in the pattern escaped the closing `/` of the literal, breaking parsing. Fixed by rewriting the regex as `/[\\/]+$/` (character class avoids the escape ambiguity). Same fix applied to the static `pb_public/setup.html`.
+- **[Go / AES]** `$security.encrypt`/`$security.decrypt` pass the raw key string to Go `aes.NewCipher([]byte(key))`; any key not exactly 16, 24, or 32 bytes panics with `crypto/aes: invalid key size N`. The 124-char auto-generated key triggered this at runtime. Fixed by introducing `derive32ByteKey(rawKey)` in `env_helper.js`: takes first 32 hex chars of `$security.sha256(trimmed)` — always exactly 32 ASCII bytes regardless of input length.
 
 ---
 
@@ -143,7 +146,7 @@
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED** saves all credentials to `z_system_settings_do_not_touch`; `ENCRYPTION_KEY` no longer required in request body; drops any residual `plugin_settings` records on save; deletes legacy collection if still present
 - `pb_hooks/system_bootstrap.pb.js` — **UPDATED** `autoMigratePlaintextSettings()` IIFE: detects sensitive keys in `plugin_settings` plaintext, encrypts into `z_system_settings_do_not_touch`, hard-deletes source records with `$app.delete`; also drops the `plugin_settings` collection itself on boot if it still exists
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
-- `pb_hooks/env_helper.js` — **UPDATED (simple-env branch)** `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
+- `pb_hooks/env_helper.js` — **UPDATED (AES key fix)** added `derive32ByteKey(rawKey)` that derives exactly 32 bytes via `$security.sha256` hex slice; integrated into `getEnv`/`setEnv`; `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED (syntax fix)** `SETUP_HTML_EMBEDDED` regex `/\/+$/` replaced with `/[\/]+$/`; saves all credentials directly AES-encrypted to `z_system_settings_do_not_touch`; no SECURITY_KEY/wrapVault call; drops legacy `plugin_settings` collection on save
 - `pb_public/setup.html` — **UPDATED (syntax fix + simple-env branch)** same regex fix `/[\/]+$/`; clean wizard form: Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret, optional Admin User IDs; no ENCRYPTION_KEY or SECURITY_KEY fields
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`

@@ -58,6 +58,26 @@ function validateKey(key) {
 }
 
 /**
+ * Derives a valid 32-character AES-256 key from any raw master key.
+ * PocketBase $security.encrypt / $security.decrypt requires the key to be EXACTLY 32 bytes.
+ * Using SHA-256 hex string guarantees 100% pure ASCII single-byte characters.
+ * @param {string} rawKey
+ * @returns {string} Exactly 32 ASCII characters
+ */
+function derive32ByteKey(rawKey) {
+    if (!rawKey || typeof rawKey !== "string") {
+        throw new Error("Encryption key must be a non-empty string.");
+    }
+    const trimmed = rawKey.trim();
+    if (trimmed.length === 0) {
+        throw new Error("Encryption key cannot be empty.");
+    }
+    // $security.sha256(trimmed) returns a 64-character hex string.
+    // The first 32 characters form a deterministic 32-byte key suitable for AES-256.
+    return $security.sha256(trimmed).substring(0, 32);
+}
+
+/**
  * Gets an environment setting.
  * Checks z_system_settings_do_not_touch DB settings first, decrypting if is_encrypted.
  * Falls back to system OS environment variable.
@@ -84,9 +104,10 @@ function getEnv(key) {
             if (isEncrypted && rawValue) {
                 try {
                     const masterKey = getMasterKey();
-                    return $security.decrypt(rawValue, masterKey);
+                    const aesKey = derive32ByteKey(masterKey);
+                    return $security.decrypt(rawValue, aesKey);
                 } catch (decErr) {
-                    console.log("[ENV HELPER ERROR] Failed to decrypt setting for key:", key);
+                    console.log("[ENV HELPER ERROR] Failed to decrypt setting for key:", key, decErr.message);
                     return null;
                 }
             }
@@ -120,7 +141,8 @@ function setEnv(key, plainValue, isEncrypted = true) {
     let valueToSave = stringVal;
     if (isEncrypted && stringVal !== "") {
         const masterKey = getMasterKey();
-        valueToSave = $security.encrypt(stringVal, masterKey);
+        const aesKey = derive32ByteKey(masterKey);
+        valueToSave = $security.encrypt(stringVal, aesKey);
     }
 
     let record = null;
@@ -174,6 +196,7 @@ function deleteEnv(key) {
 
 module.exports = Object.freeze({
     getMasterKey,
+    derive32ByteKey,
     getEnv,
     setEnv,
     deleteEnv,
