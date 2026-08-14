@@ -17,13 +17,13 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class',
+      darkMode: "class",
       theme: {
         extend: {
           colors: {
             clip: {
-              500: '#ff5f00',
-              600: '#e05300',
+              500: "#ff5f00",
+              600: "#e05300",
             }
           }
         }
@@ -84,7 +84,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
     <div id="formCard" class="bg-slate-900/80 border border-slate-800 shadow-2xl rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
       <form id="setupForm" class="space-y-6">
         
-        <!-- Section 1: Superuser Credentials -->
+        <!-- Section 1: Superuser Credentials / Active Session -->
         <div>
           <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
             <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,7 +93,24 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             <h2 class="text-base font-semibold text-slate-200">Autenticación de Superusuario</h2>
           </div>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <!-- Active Session Badge (Auto-detected from localStorage) -->
+          <div id="activeSessionBadge" class="hidden mb-4 bg-indigo-950/60 border border-indigo-500/40 rounded-xl p-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+                ✓
+              </div>
+              <div>
+                <p class="text-xs text-indigo-300 font-semibold uppercase tracking-wider">Sesión de Superusuario Detectada</p>
+                <p id="activeAdminEmail" class="text-sm font-medium text-slate-200">admin@example.com</p>
+              </div>
+            </div>
+            <button type="button" id="btnSwitchAccount" class="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium">
+              Cambiar cuenta
+            </button>
+          </div>
+
+          <!-- Manual Login Fields -->
+          <div id="manualAuthFields" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label for="identity" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Email / Usuario Superadmin <span class="text-rose-400">*</span>
@@ -259,51 +276,102 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
   <script>
     (function () {
       // DOM Elements
-      const setupForm = document.getElementById('setupForm');
-      const formCard = document.getElementById('formCard');
-      const alreadyConfiguredBanner = document.getElementById('alreadyConfiguredBanner');
-      const alertBox = document.getElementById('alertBox');
-      const successCard = document.getElementById('successCard');
+      const setupForm = document.getElementById("setupForm");
+      const formCard = document.getElementById("formCard");
+      const alreadyConfiguredBanner = document.getElementById("alreadyConfiguredBanner");
+      const alertBox = document.getElementById("alertBox");
+      const successCard = document.getElementById("successCard");
 
-      const identityInput = document.getElementById('identity');
-      const passwordInput = document.getElementById('password');
-      const clipApiKeyInput = document.getElementById('clipApiKey');
-      const pocketbaseUrlInput = document.getElementById('pocketbaseUrl');
-      const webhookSecretInput = document.getElementById('webhookSecret');
-      const adminUserIdsInput = document.getElementById('adminUserIds');
-      const webhookPreview = document.getElementById('webhookPreview');
+      const activeSessionBadge = document.getElementById("activeSessionBadge");
+      const activeAdminEmail = document.getElementById("activeAdminEmail");
+      const btnSwitchAccount = document.getElementById("btnSwitchAccount");
+      const manualAuthFields = document.getElementById("manualAuthFields");
 
-      const togglePasswordBtn = document.getElementById('togglePasswordBtn');
-      const toggleApiKeyBtn = document.getElementById('toggleApiKeyBtn');
-      const btnGenUuid = document.getElementById('btnGenUuid');
-      const btnSubmit = document.getElementById('btnSubmit');
-      const btnSubmitText = document.getElementById('btnSubmitText');
-      const btnSpinner = document.getElementById('btnSpinner');
-      const btnReconfigure = document.getElementById('btnReconfigure');
-      const finalWebhookUrlInput = document.getElementById('finalWebhookUrl');
-      const btnCopyWebhook = document.getElementById('btnCopyWebhook');
-      const copyText = document.getElementById('copyText');
+      const identityInput = document.getElementById("identity");
+      const passwordInput = document.getElementById("password");
+      const clipApiKeyInput = document.getElementById("clipApiKey");
+      const pocketbaseUrlInput = document.getElementById("pocketbaseUrl");
+      const webhookSecretInput = document.getElementById("webhookSecret");
+      const adminUserIdsInput = document.getElementById("adminUserIds");
+      const webhookPreview = document.getElementById("webhookPreview");
+
+      const togglePasswordBtn = document.getElementById("togglePasswordBtn");
+      const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
+      const btnGenUuid = document.getElementById("btnGenUuid");
+      const btnSubmit = document.getElementById("btnSubmit");
+      const btnSubmitText = document.getElementById("btnSubmitText");
+      const btnSpinner = document.getElementById("btnSpinner");
+      const btnReconfigure = document.getElementById("btnReconfigure");
+      const finalWebhookUrlInput = document.getElementById("finalWebhookUrl");
+      const btnCopyWebhook = document.getElementById("btnCopyWebhook");
+      const copyText = document.getElementById("copyText");
+
+      // Auto-detect active Superuser session from localStorage
+      function getActiveSuperuserAuth() {
+        const keys = ["pb_auth", "pocketbase_auth", "pocketbase_admin_auth"];
+        for (const k of keys) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.token) {
+                const model = parsed.record || parsed.model || {};
+                const isSuper = model.collectionName === "_superusers" || model.isAdmin === true || !model.collectionName;
+                if (isSuper) {
+                  return {
+                    token: parsed.token,
+                    email: model.email || model.username || "Superusuario"
+                  };
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        return null;
+      }
+
+      let activeAuth = getActiveSuperuserAuth();
+
+      function updateAuthUI() {
+        if (activeAuth && activeAuth.token) {
+          activeSessionBadge.classList.remove("hidden");
+          manualAuthFields.classList.add("hidden");
+          identityInput.removeAttribute("required");
+          passwordInput.removeAttribute("required");
+          activeAdminEmail.textContent = activeAuth.email;
+        } else {
+          activeSessionBadge.classList.add("hidden");
+          manualAuthFields.classList.remove("hidden");
+          identityInput.setAttribute("required", "required");
+          passwordInput.setAttribute("required", "required");
+        }
+      }
+
+      btnSwitchAccount.addEventListener("click", () => {
+        activeAuth = null;
+        updateAuthUI();
+      });
 
       // Helper: Show Alert
-      function showAlert(message, type = 'error') {
-        alertBox.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-800', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-800', 'text-emerald-200');
-        if (type === 'error') {
-          alertBox.classList.add('bg-rose-950/80', 'border', 'border-rose-800', 'text-rose-200');
+      function showAlert(message, type = "error") {
+        alertBox.classList.remove("hidden", "bg-rose-950/80", "border-rose-800", "text-rose-200", "bg-emerald-950/80", "border-emerald-800", "text-emerald-200");
+        if (type === "error") {
+          alertBox.classList.add("bg-rose-950/80", "border", "border-rose-800", "text-rose-200");
         } else {
-          alertBox.classList.add('bg-emerald-950/80', 'border', 'border-emerald-800', 'text-emerald-200');
+          alertBox.classList.add("bg-emerald-950/80", "border", "border-emerald-800", "text-emerald-200");
         }
         alertBox.textContent = message;
-        alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        alertBox.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
       function hideAlert() {
-        alertBox.classList.add('hidden');
+        alertBox.classList.add("hidden");
       }
 
       // Update Webhook URL Preview
       function updateWebhookPreview() {
-        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/[\/]+$/, '');
-        let secret = (webhookSecretInput.value || '').trim();
+        let baseUrl = (pocketbaseUrlInput.value || window.location.origin).trim().replace(/[\/]+$/, "");
+        let secret = (webhookSecretInput.value || "").trim();
         let preview = \`\${baseUrl}/api/clip/webhook?token=\${encodeURIComponent(secret)}\`;
         webhookPreview.textContent = preview;
         return preview;
@@ -311,13 +379,13 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       // Generate UUID4
       function generateUuid() {
-        let uuid = '';
-        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        let uuid = "";
+        if (typeof crypto !== "undefined" && crypto.randomUUID) {
           uuid = crypto.randomUUID();
         } else {
           // Fallback UUID generation
-          uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+            const r = Math.random() * 16 | 0, v = c === "x" ? r : (r & 0x3 | 0x8);
             return v.toString(16);
           });
         }
@@ -327,9 +395,9 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       // Password visibility toggle helper
       function setupTogglePassword(inputEl, btnEl) {
-        btnEl.addEventListener('click', () => {
-          const type = inputEl.getAttribute('type') === 'password' ? 'text' : 'password';
-          inputEl.setAttribute('type', type);
+        btnEl.addEventListener("click", () => {
+          const type = inputEl.getAttribute("type") === "password" ? "text" : "password";
+          inputEl.setAttribute("type", type);
         });
       }
 
@@ -337,49 +405,50 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       setupTogglePassword(clipApiKeyInput, toggleApiKeyBtn);
 
       // Event Listeners for Preview Updates
-      pocketbaseUrlInput.addEventListener('input', updateWebhookPreview);
-      webhookSecretInput.addEventListener('input', updateWebhookPreview);
-      btnGenUuid.addEventListener('click', generateUuid);
+      pocketbaseUrlInput.addEventListener("input", updateWebhookPreview);
+      webhookSecretInput.addEventListener("input", updateWebhookPreview);
+      btnGenUuid.addEventListener("click", generateUuid);
 
       // Reconfigure action
       if (btnReconfigure) {
-        btnReconfigure.addEventListener('click', () => {
-          formCard.classList.remove('hidden');
-          alreadyConfiguredBanner.classList.add('hidden');
+        btnReconfigure.addEventListener("click", () => {
+          formCard.classList.remove("hidden");
+          alreadyConfiguredBanner.classList.add("hidden");
+          updateAuthUI();
         });
       }
 
       // Copy Webhook URL to clipboard
-      btnCopyWebhook.addEventListener('click', async () => {
+      btnCopyWebhook.addEventListener("click", async () => {
         const text = finalWebhookUrlInput.value;
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(text);
           } else {
             finalWebhookUrlInput.select();
-            document.execCommand('copy');
+            document.execCommand("copy");
           }
-          copyText.textContent = '¡Copiado!';
-          btnCopyWebhook.classList.replace('bg-emerald-600', 'bg-slate-700');
-          btnCopyWebhook.classList.replace('text-slate-950', 'text-emerald-400');
+          copyText.textContent = "¡Copiado!";
+          btnCopyWebhook.classList.replace("bg-emerald-600", "bg-slate-700");
+          btnCopyWebhook.classList.replace("text-slate-950", "text-emerald-400");
           setTimeout(() => {
-            copyText.textContent = 'Copiar';
-            btnCopyWebhook.classList.replace('bg-slate-700', 'bg-emerald-600');
-            btnCopyWebhook.classList.replace('text-emerald-400', 'text-slate-950');
+            copyText.textContent = "Copiar";
+            btnCopyWebhook.classList.replace("bg-slate-700", "bg-emerald-600");
+            btnCopyWebhook.classList.replace("text-emerald-400", "text-slate-950");
           }, 2500);
         } catch (err) {
-          console.error('Failed to copy: ', err);
+          console.error("Failed to copy: ", err);
         }
       });
 
-      // 1. Initial Load: Check setup status
+      // 1. Initial Load: Check setup status and auth
       async function checkStatus() {
-        // Set default pocketbase URL
         pocketbaseUrlInput.value = window.location.origin;
         generateUuid();
+        updateAuthUI();
 
         try {
-          const res = await fetch('/api/plugin/setup-status');
+          const res = await fetch("/api/plugin/setup-status");
           if (res.ok) {
             const data = await res.json();
             if (data.pocketbase_url_suggestion) {
@@ -387,36 +456,36 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
               updateWebhookPreview();
             }
             if (data.is_configured) {
-              alreadyConfiguredBanner.classList.remove('hidden');
-              formCard.classList.add('hidden');
+              alreadyConfiguredBanner.classList.remove("hidden");
+              formCard.classList.add("hidden");
             }
           }
         } catch (err) {
-          console.warn('Could not check setup status:', err);
+          console.warn("Could not check setup status:", err);
         }
       }
 
       // 2. Form Submission Handler
-      setupForm.addEventListener('submit', async (e) => {
+      setupForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         hideAlert();
 
-        const identity = identityInput.value.trim();
-        const password = passwordInput.value;
+        const identity = identityInput.value ? identityInput.value.trim() : "";
+        const password = passwordInput.value || "";
         const clip_api_key = clipApiKeyInput.value.trim();
         const pocketbase_url = pocketbaseUrlInput.value.trim();
         const clip_webhook_secret = webhookSecretInput.value.trim();
         const admin_user_ids = adminUserIdsInput.value.trim();
 
         if (!clip_api_key || clip_api_key.length < 20) {
-          showAlert('La Clip API Key debe tener al menos 20 caracteres.');
+          showAlert("La Clip API Key debe tener al menos 20 caracteres.");
           return;
         }
 
         // Disable button & show spinner
         btnSubmit.disabled = true;
-        btnSubmitText.textContent = 'Configurando Plugin...';
-        btnSpinner.classList.remove('hidden');
+        btnSubmitText.textContent = "Configurando Plugin...";
+        btnSpinner.classList.remove("hidden");
 
         try {
           const payload = {
@@ -428,9 +497,14 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             admin_user_ids
           };
 
-          const response = await fetch('/api/plugin/setup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const headers = { "Content-Type": "application/json" };
+          if (activeAuth && activeAuth.token) {
+            headers["Authorization"] = "Bearer " + activeAuth.token;
+          }
+
+          const response = await fetch("/api/plugin/setup", {
+            method: "POST",
+            headers: headers,
             body: JSON.stringify(payload)
           });
 
@@ -438,26 +512,26 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
           if (!response.ok) {
             const errorMsg = resData.message || resData.error || \`Error \${response.status}: No se pudo guardar la configuración.\`;
-            showAlert(errorMsg, 'error');
+            showAlert(errorMsg, "error");
             btnSubmit.disabled = false;
-            btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
-            btnSpinner.classList.add('hidden');
+            btnSubmitText.textContent = "Guardar y Finalizar Configuración";
+            btnSpinner.classList.add("hidden");
             return;
           }
 
           // Success Flow
-          formCard.classList.add('hidden');
-          alreadyConfiguredBanner.classList.add('hidden');
+          formCard.classList.add("hidden");
+          alreadyConfiguredBanner.classList.add("hidden");
           finalWebhookUrlInput.value = updateWebhookPreview();
-          successCard.classList.remove('hidden');
-          successCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          successCard.classList.remove("hidden");
+          successCard.scrollIntoView({ behavior: "smooth", block: "center" });
 
         } catch (err) {
-          console.error('Setup submit error:', err);
-          showAlert('Error de red o conexión al servidor. Inténtalo nuevamente.');
+          console.error("Setup submit error:", err);
+          showAlert("Error de red o conexión al servidor. Inténtalo nuevamente.");
           btnSubmit.disabled = false;
-          btnSubmitText.textContent = 'Guardar y Finalizar Configuración';
-          btnSpinner.classList.add('hidden');
+          btnSubmitText.textContent = "Guardar y Finalizar Configuración";
+          btnSpinner.classList.add("hidden");
         }
       });
 
@@ -504,20 +578,20 @@ routerAdd("POST", "/api/plugin/setup", (e) => {
   var info = e.requestInfo();
   var body = info.body || {};
 
-  // ── Rate Limiting — protect superuser auth from brute force ──────────────
-  var rl = require(`${__hooks}/rate_limiter.js`);
-  var clientIp = e.realIP ? e.realIP() : "unknown";
-  var rlResult = rl.checkLimit("setup_auth:" + clientIp, 5, 900000); // 5 attempts / 15 min
-  if (!rlResult.allowed) {
-    throw new TooManyRequestsError("Too many setup attempts. Please wait 15 minutes before trying again.");
-  }
-
   // ── Authentication Check ───────────────────────────────────────────────
   var isSuperuser = false;
 
   if (e.hasSuperuserAuth()) {
     isSuperuser = true;
   } else if (body.identity && body.password) {
+    // Rate Limiting — protect superuser auth from brute force
+    var rl = require(`${__hooks}/rate_limiter.js`);
+    var clientIp = e.realIP ? e.realIP() : "unknown";
+    var rlResult = rl.checkLimit("setup_auth:" + clientIp, 5, 900000); // 5 attempts / 15 min
+    if (!rlResult.allowed) {
+      throw new TooManyRequestsError("Too many setup attempts. Please wait 15 minutes before trying again.");
+    }
+
     var adminRecord = null;
     try {
       adminRecord = $app.findAuthRecordByEmail("_superusers", body.identity.toString());

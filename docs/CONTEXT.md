@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-14 (feat/simple-env-encryption — AES key size fix: `derive32ByteKey` in `env_helper.js`)
+> Last updated: 2026-08-14 (Setup Wizard UX — superadmin session auto-detection + Authorization header auth bypass)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -67,6 +67,9 @@
 - [COMPLETE] **Setup Wizard Simplified (`setup_wizard.pb.js` + `pb_public/setup.html`)** — clean wizard requiring Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret Token, and optional Admin User IDs; all credentials saved directly AES-encrypted to `z_system_settings_do_not_touch`; `SETUP_HTML_EMBEDDED` kept 100% in sync with static file; no `ENCRYPTION_KEY` field in form
 - [COMPLETE] **`SETUP_HTML_EMBEDDED` Regex Escape Syntax Fix** — replaced `/\\/+$/` with `/[\\/]+$/` in both `pb_public/setup.html` and the embedded template in `pb_hooks/setup_wizard.pb.js`; the original regex's backslash caused a syntax collision when Goja evaluated the multi-line JS template string; `node --check` passes on all `pb_hooks/` files
 - [COMPLETE] **AES Key Size Fix (`env_helper.js`)** — added `derive32ByteKey(rawKey)` which deterministically derives exactly 32 ASCII bytes from any-length `ENCRYPTION_KEY` via the first 32 hex chars of `$security.sha256(trimmed)`; integrated into `getEnv` and `setEnv`; resolves Go `crypto/aes: invalid key size` panic for keys of any length (124, 425, etc.); verified with `node --check` and approved by `@code-reviewer`
+- [COMPLETE] **Setup Wizard Superadmin Session Auto-Detection** — `setup.html` reads `pb_auth`/`pocketbase_auth` from `localStorage`, detects a valid JWT, and shows an active-session badge with the superadmin email; manual Email/Password fields are hidden and their `required` attribute is removed when a session is already active
+- [COMPLETE] **Setup Wizard Reconfigure Credentials Flow** — "Reconfigure Credentials" button skips password prompt when the Admin UI session is live; opens the form directly for seamless re-submission
+- [COMPLETE] **`Authorization: Bearer` Header Auth in `setup_wizard.pb.js`** — backend accepts `Authorization: Bearer <token>` header and authenticates via `e.hasSuperuserAuth()`, bypassing the credential brute-force rate-limit path; credentials-in-body path is still supported for backward compatibility
 
 ---
 
@@ -111,6 +114,8 @@
 - **`feat/simple-env-encryption` eliminates vault/wrapping complexity:** The full envelope-encryption + passphrase wrapping architecture (vault unlock, passphrases, `system_vault_api.pb.js`) was dropped in favor of a single `ENCRYPTION_KEY` env var or auto-generated key on disk. Chosen to reduce operational complexity for PaaS deployments where the env var IS the security boundary. The previous vault approach is preserved in `main` for deployments that need passphrase-at-rest protection.
 - **`/[\\/]+$/` instead of `/\\/+$/` in embedded JS template strings:** When a regex literal containing `\\/` is embedded inside a multi-line JS template string that itself lives inside a Goja-evaluated PocketBase hook, the backslash triggers a parser-level syntax collision. Using a character class `[\\/]` achieves identical semantics without the escape ambiguity. Applied consistently in both `pb_public/setup.html` and `SETUP_HTML_EMBEDDED` in `setup_wizard.pb.js`.
 - **`derive32ByteKey(rawKey)` in `env_helper.js` for AES-256 compliance:** `$security.encrypt`/`$security.decrypt` in Goja pass the key directly to Go's `aes.NewCipher([]byte(key))`, which requires EXACTLY 16, 24, or 32 bytes. Auto-generated keys (124 chars) and any user-supplied `ENCRYPTION_KEY` of arbitrary length would panic Go with `crypto/aes: invalid key size`. Solution: derive a stable 32-byte key deterministically using the first 32 hex chars of `$security.sha256(trimmedKey)` — no key material is lost, result is always exactly 32 ASCII bytes, and derivation is deterministic so previously encrypted values remain decryptable.
+- **`Authorization: Bearer` header auth on `/api/plugin/setup`:** When the browser already holds an Admin UI session (`localStorage`), `setup.html` forwards the JWT in the `Authorization` header; `setup_wizard.pb.js` calls `e.hasSuperuserAuth()` first, skipping credential parsing entirely. Avoids triggering the rate-limiter that protects the credential path against brute-force.
+- **Manual Email/Password fields hidden (not removed) when session is active:** The fields are hidden via CSS and their `required` attribute is removed via JS to allow form submission without them; they are not removed from the DOM so they can be restored if the user clicks "Reconfigure Credentials".
 
 ---
 
@@ -126,7 +131,6 @@
 - **[Docker]** `/pb/pb_data` had no write permissions for user `pocketbase` — fixed with `mkdir -p /pb/pb_data && chown -R pocketbase:pocketbase /pb` before the `VOLUME` instruction.
 - **[Goja / Template Strings]** Regex `/\\/+$/` inside `SETUP_HTML_EMBEDDED` multi-line JS template caused a syntax collision when Goja parsed the hook — backslash in the pattern escaped the closing `/` of the literal, breaking parsing. Fixed by rewriting the regex as `/[\\/]+$/` (character class avoids the escape ambiguity). Same fix applied to the static `pb_public/setup.html`.
 - **[Go / AES]** `$security.encrypt`/`$security.decrypt` pass the raw key string to Go `aes.NewCipher([]byte(key))`; any key not exactly 16, 24, or 32 bytes panics with `crypto/aes: invalid key size N`. The 124-char auto-generated key triggered this at runtime. Fixed by introducing `derive32ByteKey(rawKey)` in `env_helper.js`: takes first 32 hex chars of `$security.sha256(trimmed)` — always exactly 32 ASCII bytes regardless of input length.
-
 ---
 
 ## 5. Key Files
@@ -147,8 +151,8 @@
 - `pb_hooks/system_bootstrap.pb.js` — **UPDATED** `autoMigratePlaintextSettings()` IIFE: detects sensitive keys in `plugin_settings` plaintext, encrypts into `z_system_settings_do_not_touch`, hard-deletes source records with `$app.delete`; also drops the `plugin_settings` collection itself on boot if it still exists
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
 - `pb_hooks/env_helper.js` — **UPDATED (AES key fix)** added `derive32ByteKey(rawKey)` that derives exactly 32 bytes via `$security.sha256` hex slice; integrated into `getEnv`/`setEnv`; `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
-- `pb_hooks/setup_wizard.pb.js` — **UPDATED (syntax fix)** `SETUP_HTML_EMBEDDED` regex `/\/+$/` replaced with `/[\/]+$/`; saves all credentials directly AES-encrypted to `z_system_settings_do_not_touch`; no SECURITY_KEY/wrapVault call; drops legacy `plugin_settings` collection on save
-- `pb_public/setup.html` — **UPDATED (syntax fix + simple-env branch)** same regex fix `/[\/]+$/`; clean wizard form: Superuser Email/Password, Clip API Key, PocketBase URL, Webhook Secret, optional Admin User IDs; no ENCRYPTION_KEY or SECURITY_KEY fields
+- `pb_hooks/setup_wizard.pb.js` — **UPDATED (session auth + Authorization header)** accepts `Authorization: Bearer <token>` via `e.hasSuperuserAuth()` as primary auth path; credential-in-body path preserved for backward compatibility; saves all credentials AES-encrypted to `z_system_settings_do_not_touch`; drops legacy `plugin_settings` collection on save
+- `pb_public/setup.html` — **UPDATED (session auto-detection + UX)** detects superadmin JWT in `localStorage` (`pb_auth`/`pocketbase_auth`); shows active-session badge with email; hides and de-`required`s manual credential fields; "Reconfigure Credentials" restores form without re-auth when Admin UI session is live; sends `Authorization: Bearer` header when token is available
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error
