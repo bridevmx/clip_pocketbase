@@ -662,6 +662,60 @@ Para un análisis completo de los 10 vectores de ataque identificados y su estad
 
 ---
 
+## 🛠️ API de Sistema: Configuración Cifrada, Hooks Dinámicos y Migraciones
+
+Esta rama (`feat/simple-env-encryption`) incluye el motor dinámico `pb-core` con endpoints administrativos para gestionar configuraciones cifradas, extensiones de código en runtime y migraciones:
+
+### 1. 🧙‍♂️ Asistente de Configuración (Setup Wizard)
+- **Interfaz Web Interactiva**: `/setup` (Detecta automáticamente la sesión activa de Superusuario desde `localStorage` y redirige a `/_/` si el visitante no está autenticado cuando el plugin ya fue configurado).
+- **Estado Público de Configuración**: `GET /api/plugin/setup-status`
+- **Guardado de Configuración Inicial**: `POST /api/plugin/setup` (Requiere autenticación de Superusuario o token JWT en header `Authorization: Bearer <token>`).
+
+### 2. 🔐 Bóveda Cifrada de Variables (`/api/v1/system/config`)
+Almacena credenciales sensibles en la colección interna `z_system_settings_do_not_touch` con cifrado **AES-256** derivado determinísticamente:
+- **Guardar / Actualizar Variable**: `POST /api/v1/system/config`
+  ```json
+  {
+    "key": "clip_api_key",
+    "value": "Basic Standard_...",
+    "is_encrypted": true
+  }
+  ```
+- **Consultar Configuración**: `GET /api/v1/system/config` (Lista claves y metadatos) o `GET /api/v1/system/config?key=clip_api_key` (Entrega el valor descifrado exclusivamente en memoria para el Superusuario).
+- **Eliminar Configuración**: `DELETE /api/v1/system/config?key=clip_api_key`
+
+### 3. 🪝 Extensiones y Hooks Dinámicos (`/api/v1/system/extensions`)
+Permite registrar handlers y hooks en caliente sin reiniciar PocketBase:
+- **Crear / Actualizar Extensión**: `POST /api/v1/system/extensions`
+  ```json
+  {
+    "name": "custom_payment_notifier",
+    "event": "onRecordAfterCreateSuccess",
+    "code": "$app.logger().info('Nuevo registro creado', 'id', e.record.id); e.next();"
+  }
+  ```
+- **Listar Extensiones**: `GET /api/v1/system/extensions`
+- **Eliminar Extensión**: `DELETE /api/v1/system/extensions?name=custom_payment_notifier`
+
+### 4. 🗄️ Migraciones Dinámicas en Runtime (`/api/v1/system/migrations`)
+Permite definir e iterar sobre migraciones de base de datos directamente vía API:
+- **Crear / Ejecutar Migración**: `POST /api/v1/system/migrations`
+  ```json
+  {
+    "file_name": "1799000001_create_custom_log.js",
+    "up_code": "const col = new Collection({ name: 'custom_log' }); $app.save(col);",
+    "down_code": "const col = $app.findCollectionByNameOrId('custom_log'); $app.delete(col);"
+  }
+  ```
+- **Listar Migraciones Ejecutadas**: `GET /api/v1/system/migrations`
+- **Revertir Migración**: `POST /api/v1/system/migrations/rollback`
+
+> 📖 **Guías de Integración Completas:**  
+> - `docs/HOOKS-MIGRATIONS-ENVS-GUIDE.md` — Guía detallada de uso de Hooks, Migraciones y Variables Cifradas.  
+> - `docs/ENDPOINTS-AND-INTEGRATION-GUIDE.md` — Referencia completa de Endpoints y Contratos del plugin.
+
+---
+
 ## 📄 Licencia
 
 MIT — úsalo libremente en tus propios proyectos.

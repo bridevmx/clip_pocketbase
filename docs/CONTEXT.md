@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-14 (Setup Wizard — strict security redirect + full credential section hiding + exhaustive localStorage/cookie auth scan)
+> Last updated: 2026-08-14 (README.md — System API section: Setup Wizard, Encrypted Vault, Dynamic Extensions & Migrations)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -168,6 +168,7 @@
 - `docs/HANDOFF.md` — full project handoff with ADRs, endpoints, collections, status flows, known issues
 - `docs/HOOKS-MIGRATIONS-ENVS-GUIDE.md` — comprehensive technical reference for PocketBase v0.23+ JSVM: boot lifecycle, `pb_hooks` architecture, `routerAdd`/static routes, event hooks (`onBootstrap`, `onRecordCreate`, `onCron`), `require()` scope isolation, `$app.*` Records API, idempotent migrations, API rules, DB seeding, and hot-config system (`getEnvOrSetting()`, Setup Wizard, zero-downtime credential rotation)
 - `docs/ENDPOINTS-AND-INTEGRATION-GUIDE.md` — **NEW** integration manual covering all custom endpoints, PocketBase collections, and business hooks; intended for frontend developers and third-party integrators
+- `README.md` — **UPDATED** added `## 🛠️ API de Sistema` section documenting: Setup Wizard (`/setup`, `/api/plugin/setup-status`, `/api/plugin/setup`), Encrypted Config Vault (`/api/v1/system/config`), Dynamic Extensions & Hooks (`/api/v1/system/extensions`), Dynamic Migrations (`/api/v1/system/migrations`), with cross-references to `HOOKS-MIGRATIONS-ENVS-GUIDE.md` and `ENDPOINTS-AND-INTEGRATION-GUIDE.md`
 - `scripts/test.js` — E2E tests (36/36 passing for Clip; SPEI E2E tests still pending)
 - `Dockerfile` — multi-stage, multi-arch build; Stage 1 downloads PocketBase ARM64 binary from GitHub Releases + SHA-256 verify; Stage 2 is native ARM64 runtime with non-root user `pocketbase`
 
