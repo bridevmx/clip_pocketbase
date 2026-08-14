@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-14 (Setup Wizard UX — superadmin session auto-detection + Authorization header auth bypass)
+> Last updated: 2026-08-14 (Setup Wizard — dynamic base URL detection via `window.location.origin` + Incognito vs Normal mode behavior documented)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -70,6 +70,7 @@
 - [COMPLETE] **Setup Wizard Superadmin Session Auto-Detection** — `setup.html` reads `pb_auth`/`pocketbase_auth` from `localStorage`, detects a valid JWT, and shows an active-session badge with the superadmin email; manual Email/Password fields are hidden and their `required` attribute is removed when a session is already active
 - [COMPLETE] **Setup Wizard Reconfigure Credentials Flow** — "Reconfigure Credentials" button skips password prompt when the Admin UI session is live; opens the form directly for seamless re-submission
 - [COMPLETE] **`Authorization: Bearer` Header Auth in `setup_wizard.pb.js`** — backend accepts `Authorization: Bearer <token>` header and authenticates via `e.hasSuperuserAuth()`, bypassing the credential brute-force rate-limit path; credentials-in-body path is still supported for backward compatibility
+- [COMPLETE] **Setup Wizard Dynamic Base URL Detection** — `checkStatus()` in `setup.html` now always uses `window.location.origin` as the first priority for the PocketBase URL, ensuring the wizard adopts the actual browser domain (e.g. `https://decokit.ibrandprolab.com`) instead of carrying over a stale static suggestion from a previous domain stored in `localStorage`
 
 ---
 
@@ -116,6 +117,8 @@
 - **`derive32ByteKey(rawKey)` in `env_helper.js` for AES-256 compliance:** `$security.encrypt`/`$security.decrypt` in Goja pass the key directly to Go's `aes.NewCipher([]byte(key))`, which requires EXACTLY 16, 24, or 32 bytes. Auto-generated keys (124 chars) and any user-supplied `ENCRYPTION_KEY` of arbitrary length would panic Go with `crypto/aes: invalid key size`. Solution: derive a stable 32-byte key deterministically using the first 32 hex chars of `$security.sha256(trimmedKey)` — no key material is lost, result is always exactly 32 ASCII bytes, and derivation is deterministic so previously encrypted values remain decryptable.
 - **`Authorization: Bearer` header auth on `/api/plugin/setup`:** When the browser already holds an Admin UI session (`localStorage`), `setup.html` forwards the JWT in the `Authorization` header; `setup_wizard.pb.js` calls `e.hasSuperuserAuth()` first, skipping credential parsing entirely. Avoids triggering the rate-limiter that protects the credential path against brute-force.
 - **Manual Email/Password fields hidden (not removed) when session is active:** The fields are hidden via CSS and their `required` attribute is removed via JS to allow form submission without them; they are not removed from the DOM so they can be restored if the user clicks "Reconfigure Credentials".
+- **`window.location.origin` as first priority in `checkStatus()` for PocketBase URL:** Prevents stale domain suggestions from persisting when the wizard is loaded from a different domain. `localStorage` may hold a URL from a previous deployment; overriding with the live browser origin ensures the correct domain is always pre-populated regardless of cached state.
+- **Incognito mode requires explicit Superuser credentials in Setup Wizard:** In Incognito/Private mode there is no shared `localStorage`, so the wizard cannot auto-detect an active Admin UI session. The Email/Password fields are always shown in this mode. This is intentional for security — no credential bypass without a verifiable session.
 
 ---
 
@@ -152,7 +155,7 @@
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
 - `pb_hooks/env_helper.js` — **UPDATED (AES key fix)** added `derive32ByteKey(rawKey)` that derives exactly 32 bytes via `$security.sha256` hex slice; integrated into `getEnv`/`setEnv`; `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED (session auth + Authorization header)** accepts `Authorization: Bearer <token>` via `e.hasSuperuserAuth()` as primary auth path; credential-in-body path preserved for backward compatibility; saves all credentials AES-encrypted to `z_system_settings_do_not_touch`; drops legacy `plugin_settings` collection on save
-- `pb_public/setup.html` — **UPDATED (session auto-detection + UX)** detects superadmin JWT in `localStorage` (`pb_auth`/`pocketbase_auth`); shows active-session badge with email; hides and de-`required`s manual credential fields; "Reconfigure Credentials" restores form without re-auth when Admin UI session is live; sends `Authorization: Bearer` header when token is available
+- `pb_public/setup.html` — **UPDATED (dynamic base URL + Incognito behavior)** `checkStatus()` now prioritizes `window.location.origin` over any cached `localStorage` suggestion; behavior differs by browser mode: Incognito always shows Email/Password fields (no shared storage), Normal mode auto-detects active Admin UI session and hides them; sends `Authorization: Bearer` header when token is available
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error

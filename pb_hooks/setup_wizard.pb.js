@@ -448,13 +448,13 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         updateAuthUI();
 
         try {
+          // Always ensure the active browser origin is the default (e.g. https://decokit.ibrandprolab.com)
+          pocketbaseUrlInput.value = window.location.origin;
+          updateWebhookPreview();
+
           const res = await fetch("/api/plugin/setup-status");
           if (res.ok) {
             const data = await res.json();
-            if (data.pocketbase_url_suggestion) {
-              pocketbaseUrlInput.value = data.pocketbase_url_suggestion;
-              updateWebhookPreview();
-            }
             if (data.is_configured) {
               alreadyConfiguredBanner.classList.remove("hidden");
               formCard.classList.add("hidden");
