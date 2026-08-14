@@ -42,7 +42,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         <span class="text-2xl font-extrabold text-slate-100 tracking-tight">PocketBase</span>
       </div>
       <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-100">
-        Configuración Inicial del Plugin
+        Configuración del Plugin Clip
       </h1>
       <p class="mt-2 text-sm text-slate-400">
         Asistente seguro de inicialización y credenciales para Clip México.
@@ -84,8 +84,24 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
     <div id="formCard" class="bg-slate-900/80 border border-slate-800 shadow-2xl rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
       <form id="setupForm" class="space-y-6">
         
-        <!-- Section 1: Superuser Credentials / Active Session -->
-        <div>
+        <!-- Active Superuser Session Indicator (Shown when authenticated) -->
+        <div id="activeSessionBadge" class="hidden bg-indigo-950/60 border border-indigo-500/40 rounded-xl p-4 flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+              ✓
+            </div>
+            <div>
+              <p class="text-xs text-indigo-300 font-semibold uppercase tracking-wider">Superadministrador Autenticado</p>
+              <p id="activeAdminEmail" class="text-sm font-medium text-slate-200">admin@example.com</p>
+            </div>
+          </div>
+          <button type="button" id="btnSwitchAccount" class="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium">
+            Cambiar cuenta
+          </button>
+        </div>
+
+        <!-- Section 1: Superuser Credentials (Only shown when NO active session exists) -->
+        <div id="manualAuthSection">
           <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
             <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -93,29 +109,12 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
             <h2 class="text-base font-semibold text-slate-200">Autenticación de Superusuario</h2>
           </div>
 
-          <!-- Active Session Badge (Auto-detected from localStorage) -->
-          <div id="activeSessionBadge" class="hidden mb-4 bg-indigo-950/60 border border-indigo-500/40 rounded-xl p-4 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-              <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
-                ✓
-              </div>
-              <div>
-                <p class="text-xs text-indigo-300 font-semibold uppercase tracking-wider">Sesión de Superusuario Detectada</p>
-                <p id="activeAdminEmail" class="text-sm font-medium text-slate-200">admin@example.com</p>
-              </div>
-            </div>
-            <button type="button" id="btnSwitchAccount" class="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium">
-              Cambiar cuenta
-            </button>
-          </div>
-
-          <!-- Manual Login Fields -->
           <div id="manualAuthFields" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label for="identity" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Email / Usuario Superadmin <span class="text-rose-400">*</span>
               </label>
-              <input type="email" id="identity" required placeholder="admin@example.com"
+              <input type="email" id="identity" placeholder="admin@example.com"
                 class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
             </div>
 
@@ -124,7 +123,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
                 Contraseña <span class="text-rose-400">*</span>
               </label>
               <div class="relative">
-                <input type="password" id="password" required placeholder="••••••••••••"
+                <input type="password" id="password" placeholder="••••••••••••"
                   class="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-3.5 pr-10 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
                 <button type="button" id="togglePasswordBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
                   <span class="sr-only">Mostrar u ocultar contraseña</span>
@@ -285,6 +284,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       const activeSessionBadge = document.getElementById("activeSessionBadge");
       const activeAdminEmail = document.getElementById("activeAdminEmail");
       const btnSwitchAccount = document.getElementById("btnSwitchAccount");
+      const manualAuthSection = document.getElementById("manualAuthSection");
       const manualAuthFields = document.getElementById("manualAuthFields");
 
       const identityInput = document.getElementById("identity");
@@ -306,27 +306,61 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       const btnCopyWebhook = document.getElementById("btnCopyWebhook");
       const copyText = document.getElementById("copyText");
 
-      // Auto-detect active Superuser session from localStorage
+      // Exhaustive Superuser Auth Token Extraction from localStorage & cookies
       function getActiveSuperuserAuth() {
-        const keys = ["pb_auth", "pocketbase_auth", "pocketbase_admin_auth"];
+        // Check all common localStorage keys used by PocketBase SDK & Admin UI
+        const keys = [
+          "pb_auth",
+          "pocketbase_auth",
+          "pocketbase_admin_auth",
+          "pb_superuser_auth",
+          "pocketbase_superusers_auth"
+        ];
+
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.includes("auth") || k.includes("pb_"))) {
+            if (!keys.includes(k)) keys.push(k);
+          }
+        }
+
         for (const k of keys) {
           try {
             const raw = localStorage.getItem(k);
             if (raw) {
-              const parsed = JSON.parse(raw);
+              let parsed = null;
+              try { parsed = JSON.parse(raw); } catch (_) {}
+
               if (parsed && parsed.token) {
                 const model = parsed.record || parsed.model || {};
-                const isSuper = model.collectionName === "_superusers" || model.isAdmin === true || !model.collectionName;
-                if (isSuper) {
-                  return {
-                    token: parsed.token,
-                    email: model.email || model.username || "Superusuario"
-                  };
-                }
+                const email = model.email || model.username || "Superadministrador";
+                return { token: parsed.token, email: email };
+              } else if (typeof raw === "string" && raw.startsWith("ey") && raw.length > 50) {
+                return { token: raw.trim(), email: "Superadministrador" };
               }
             }
           } catch (_) {}
         }
+
+        // Check document.cookie as fallback
+        try {
+          const cookies = (document.cookie || "").split(";");
+          for (let c of cookies) {
+            c = c.trim();
+            if (c.startsWith("pb_auth=") || c.startsWith("pocketbase_auth=")) {
+              const val = decodeURIComponent(c.split("=")[1] || "");
+              try {
+                const parsed = JSON.parse(val);
+                if (parsed && parsed.token) {
+                  return { token: parsed.token, email: parsed.record?.email || "Superadministrador" };
+                }
+              } catch (_) {
+                if (val.startsWith("ey")) return { token: val, email: "Superadministrador" };
+              }
+            }
+          }
+        } catch (_) {}
+
         return null;
       }
 
@@ -334,23 +368,27 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       function updateAuthUI() {
         if (activeAuth && activeAuth.token) {
+          // Hide manual auth fields and section completely
           activeSessionBadge.classList.remove("hidden");
-          manualAuthFields.classList.add("hidden");
-          identityInput.removeAttribute("required");
-          passwordInput.removeAttribute("required");
+          manualAuthSection.classList.add("hidden");
+          if (identityInput) identityInput.removeAttribute("required");
+          if (passwordInput) passwordInput.removeAttribute("required");
           activeAdminEmail.textContent = activeAuth.email;
         } else {
+          // Show manual credentials section
           activeSessionBadge.classList.add("hidden");
-          manualAuthFields.classList.remove("hidden");
-          identityInput.setAttribute("required", "required");
-          passwordInput.setAttribute("required", "required");
+          manualAuthSection.classList.remove("hidden");
+          if (identityInput) identityInput.setAttribute("required", "required");
+          if (passwordInput) passwordInput.setAttribute("required", "required");
         }
       }
 
-      btnSwitchAccount.addEventListener("click", () => {
-        activeAuth = null;
-        updateAuthUI();
-      });
+      if (btnSwitchAccount) {
+        btnSwitchAccount.addEventListener("click", () => {
+          activeAuth = null;
+          updateAuthUI();
+        });
+      }
 
       // Helper: Show Alert
       function showAlert(message, type = "error") {
@@ -395,6 +433,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
 
       // Password visibility toggle helper
       function setupTogglePassword(inputEl, btnEl) {
+        if (!inputEl || !btnEl) return;
         btnEl.addEventListener("click", () => {
           const type = inputEl.getAttribute("type") === "password" ? "text" : "password";
           inputEl.setAttribute("type", type);
@@ -409,9 +448,15 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
       webhookSecretInput.addEventListener("input", updateWebhookPreview);
       btnGenUuid.addEventListener("click", generateUuid);
 
-      // Reconfigure action
+      // Reconfigure button action
       if (btnReconfigure) {
         btnReconfigure.addEventListener("click", () => {
+          activeAuth = getActiveSuperuserAuth();
+          if (!activeAuth) {
+            // If not logged in as superuser, redirect to PocketBase Admin UI login
+            window.location.href = "/_/";
+            return;
+          }
           formCard.classList.remove("hidden");
           alreadyConfiguredBanner.classList.add("hidden");
           updateAuthUI();
@@ -448,14 +493,16 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         updateAuthUI();
 
         try {
-          // Always ensure the active browser origin is the default (e.g. https://decokit.ibrandprolab.com)
-          pocketbaseUrlInput.value = window.location.origin;
-          updateWebhookPreview();
-
           const res = await fetch("/api/plugin/setup-status");
           if (res.ok) {
             const data = await res.json();
             if (data.is_configured) {
+              activeAuth = getActiveSuperuserAuth();
+              // If already configured and user is NOT logged in as Superuser -> REDIRECT to PB Admin UI
+              if (!activeAuth) {
+                window.location.href = "/_/";
+                return;
+              }
               alreadyConfiguredBanner.classList.remove("hidden");
               formCard.classList.add("hidden");
             }
@@ -470,10 +517,10 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
         e.preventDefault();
         hideAlert();
 
-        const identity = identityInput.value ? identityInput.value.trim() : "";
-        const password = passwordInput.value || "";
+        const identity = identityInput && identityInput.value ? identityInput.value.trim() : "";
+        const password = passwordInput && passwordInput.value ? passwordInput.value : "";
         const clip_api_key = clipApiKeyInput.value.trim();
-        const pocketbase_url = pocketbaseUrlInput.value.trim();
+        const pocketbase_url = (pocketbaseUrlInput.value || window.location.origin).trim();
         const clip_webhook_secret = webhookSecretInput.value.trim();
         const admin_user_ids = adminUserIdsInput.value.trim();
 
@@ -498,6 +545,7 @@ var SETUP_HTML_EMBEDDED = `<!DOCTYPE html>
           };
 
           const headers = { "Content-Type": "application/json" };
+          activeAuth = getActiveSuperuserAuth();
           if (activeAuth && activeAuth.token) {
             headers["Authorization"] = "Bearer " + activeAuth.token;
           }

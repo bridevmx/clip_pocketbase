@@ -1,6 +1,6 @@
 # CONTEXT — Clip PocketBase Plugin
 
-> Last updated: 2026-08-14 (Setup Wizard — dynamic base URL detection via `window.location.origin` + Incognito vs Normal mode behavior documented)
+> Last updated: 2026-08-14 (Setup Wizard — strict security redirect + full credential section hiding + exhaustive localStorage/cookie auth scan)
 > Stack: PocketBase JSVM (Goja) — pb_hooks/*.pb.js + CommonJS modules + pb_migrations/*.js
 
 ---
@@ -71,6 +71,9 @@
 - [COMPLETE] **Setup Wizard Reconfigure Credentials Flow** — "Reconfigure Credentials" button skips password prompt when the Admin UI session is live; opens the form directly for seamless re-submission
 - [COMPLETE] **`Authorization: Bearer` Header Auth in `setup_wizard.pb.js`** — backend accepts `Authorization: Bearer <token>` header and authenticates via `e.hasSuperuserAuth()`, bypassing the credential brute-force rate-limit path; credentials-in-body path is still supported for backward compatibility
 - [COMPLETE] **Setup Wizard Dynamic Base URL Detection** — `checkStatus()` in `setup.html` now always uses `window.location.origin` as the first priority for the PocketBase URL, ensuring the wizard adopts the actual browser domain (e.g. `https://decokit.ibrandprolab.com`) instead of carrying over a stale static suggestion from a previous domain stored in `localStorage`
+- [COMPLETE] **Setup Wizard Strict Security Redirect** — if `is_configured === true` and no active Superuser session is detected (via `localStorage`/cookies), the page immediately redirects to `/_/` (PocketBase Admin UI login); anonymous users cannot view or interact with the Setup Wizard
+- [COMPLETE] **Setup Wizard Full Credential Section Hiding** — when an active Superuser session is present, the entire `manualAuthSection` is hidden (`hidden` attribute) and `required` is removed from all credential inputs; only the Superadmin authenticated badge is displayed
+- [COMPLETE] **`getActiveSuperuserAuth()` Exhaustive Auth Scan** — scans all known `localStorage` keys (`pb_auth`, `pocketbase_auth`, etc.) and inspects cookies to detect any active Superuser JWT; used to drive both the redirect and the credential-hiding behaviors
 
 ---
 
@@ -119,6 +122,9 @@
 - **Manual Email/Password fields hidden (not removed) when session is active:** The fields are hidden via CSS and their `required` attribute is removed via JS to allow form submission without them; they are not removed from the DOM so they can be restored if the user clicks "Reconfigure Credentials".
 - **`window.location.origin` as first priority in `checkStatus()` for PocketBase URL:** Prevents stale domain suggestions from persisting when the wizard is loaded from a different domain. `localStorage` may hold a URL from a previous deployment; overriding with the live browser origin ensures the correct domain is always pre-populated regardless of cached state.
 - **Incognito mode requires explicit Superuser credentials in Setup Wizard:** In Incognito/Private mode there is no shared `localStorage`, so the wizard cannot auto-detect an active Admin UI session. The Email/Password fields are always shown in this mode. This is intentional for security — no credential bypass without a verifiable session.
+- **Strict redirect to `/_/` when `is_configured === true` and no Superuser session:** Anonymous users are immediately bounced to PocketBase Admin UI login without seeing any Setup Wizard UI. Chose `/_/` (Admin UI) over a generic 403 page so that a legitimate operator can authenticate and return to `/setup`; the redirect is evaluated client-side before any form renders.
+- **`manualAuthSection` hidden (not removed) and `required` stripped when session is active:** Consistent with the prior decision on Email/Password fields; hiding keeps the DOM intact for the "Reconfigure Credentials" restore path, while removing `required` prevents browser form-validation from blocking submission.
+- **`getActiveSuperuserAuth()` scans multiple `localStorage` keys and cookies:** PocketBase JS SDK may persist the token under `pb_auth` or `pocketbase_auth` depending on the version and custom store configuration; scanning both (plus cookies) ensures no false-negatives that would wrongly redirect a legitimate operator.
 
 ---
 
@@ -155,7 +161,7 @@
 - `pb_migrations/1799000000_drop_legacy_plugin_settings.js` — **NEW** migration that permanently drops the `plugin_settings` collection; idempotent (no-op if already absent)
 - `pb_hooks/env_helper.js` — **UPDATED (AES key fix)** added `derive32ByteKey(rawKey)` that derives exactly 32 bytes via `$security.sha256` hex slice; integrated into `getEnv`/`setEnv`; `getMasterKey()` reads from `$os.getenv("ENCRYPTION_KEY")` or auto-generates 124-char key in `pb_data/.encryption_key` (0o600); vault wrapping/unwrapping methods removed in this branch
 - `pb_hooks/setup_wizard.pb.js` — **UPDATED (session auth + Authorization header)** accepts `Authorization: Bearer <token>` via `e.hasSuperuserAuth()` as primary auth path; credential-in-body path preserved for backward compatibility; saves all credentials AES-encrypted to `z_system_settings_do_not_touch`; drops legacy `plugin_settings` collection on save
-- `pb_public/setup.html` — **UPDATED (dynamic base URL + Incognito behavior)** `checkStatus()` now prioritizes `window.location.origin` over any cached `localStorage` suggestion; behavior differs by browser mode: Incognito always shows Email/Password fields (no shared storage), Normal mode auto-detects active Admin UI session and hides them; sends `Authorization: Bearer` header when token is available
+- `pb_public/setup.html` — **UPDATED (strict security redirect + full credential hiding + exhaustive auth scan)** redirects to `/_/` if `is_configured === true` and no Superuser session found; hides entire `manualAuthSection` and strips `required` when session is active; `getActiveSuperuserAuth()` scans `pb_auth`, `pocketbase_auth`, and cookies; `checkStatus()` uses `window.location.origin` as first priority for PocketBase URL
 - `pb_hooks/system_settings_api.pb.js` — **UPDATED** all settings endpoints gated by `requireSuperuser(e)`
 - `pb_hooks/system_hooks_api.pb.js` — **UPDATED** filename validation via strict regex `/^[a-zA-Z0-9_-]+\.pb\.js$/`; `PROTECTED_CORE_FILES` list blocks engine-file overwrites
 - `pb_hooks/system_migrations_api.pb.js` — **UPDATED** `up_code`/`down_code` executed inside atomic `txApp` transactions with automatic rollback on error
